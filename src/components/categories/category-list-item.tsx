@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CategoryCard } from './category-card';
 import { EditCategoryDialog } from './edit-category-dialog';
 import { DeleteCategoryDialog } from './delete-category-dialog';
@@ -29,12 +30,17 @@ interface CategoryListItemProps {
 }
 
 export function CategoryListItem({ category }: CategoryListItemProps) {
+    const router = useRouter();
     const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
 
+    const handleClick = () => {
+        router.push(`/dashboard/categories/${category.id}`);
+    };
+
     return (
         <div className='relative group'>
-            <CategoryCard category={category} />
+            <CategoryCard category={category} onClick={handleClick} />
 
             <div className='absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity'>
                 <DropdownMenu>

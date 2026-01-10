@@ -2,6 +2,7 @@
 
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from './auth-provider';
+import { QueryProvider } from './query-provider';
 
 interface ProvidersProps {
     children: React.ReactNode;
@@ -10,8 +11,10 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
     return (
         <AuthProvider>
-            {children}
-            <Toaster position='top-right' richColors />
+            <QueryProvider>
+                {children}
+                <Toaster position='top-right' richColors />
+            </QueryProvider>
         </AuthProvider>
     );
 }
