@@ -35,6 +35,7 @@ const authMiddleware = auth((req) => {
 
 // Export as proxy for Next.js 16
 export function proxy(request: NextRequest) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return authMiddleware(request, {} as any);
 }
 

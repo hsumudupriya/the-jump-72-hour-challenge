@@ -9,11 +9,12 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Mail, FolderOpen, Link as LinkIcon } from 'lucide-react';
+import { Plus, Mail, FolderOpen, Link as LinkIcon, Inbox } from 'lucide-react';
 import {
     CategoryListItem,
     CreateCategoryDialog,
 } from '@/components/categories';
+import { SyncEmailsButton } from '@/components/emails';
 
 export default async function DashboardPage() {
     const session = await auth();
@@ -22,8 +23,8 @@ export default async function DashboardPage() {
         redirect('/login');
     }
 
-    // Fetch connected accounts and categories from database
-    const [accounts, categories] = await Promise.all([
+    // Fetch connected accounts, categories, and email stats from database
+    const [accounts, categories, emailStats] = await Promise.all([
         prisma.emailAccount.findMany({
             where: { userId: session.user.id },
             select: {
@@ -42,19 +43,90 @@ export default async function DashboardPage() {
             },
             orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
         }),
+        prisma.email.count({
+            where: { account: { userId: session.user.id } },
+        }),
     ]);
+
+    const totalEmails = emailStats;
+    const categorizedEmails = categories.reduce(
+        (sum, c) => sum + c._count.emails,
+        0
+    );
+    const uncategorizedEmails = totalEmails - categorizedEmails;
 
     return (
         <div className='space-y-8'>
             {/* Welcome Section */}
-            <div>
-                <h1 className='text-3xl font-bold'>
-                    Welcome back, {session.user.name?.split(' ')[0] || 'there'}!
-                </h1>
-                <p className='text-muted-foreground'>
-                    Manage your email categories and connected accounts
-                </p>
+            <div className='flex items-center justify-between'>
+                <div>
+                    <h1 className='text-3xl font-bold'>
+                        Welcome back,{' '}
+                        {session.user.name?.split(' ')[0] || 'there'}!
+                    </h1>
+                    <p className='text-muted-foreground'>
+                        Manage your email categories and connected accounts
+                    </p>
+                </div>
+                {accounts.length > 0 && <SyncEmailsButton />}
             </div>
+
+            {/* Email Stats Section */}
+            {totalEmails > 0 && (
+                <div className='grid gap-4 sm:grid-cols-3'>
+                    <Card>
+                        <CardContent className='pt-6'>
+                            <div className='flex items-center gap-4'>
+                                <div className='flex h-12 w-12 items-center justify-center rounded-full bg-primary/10'>
+                                    <Inbox className='h-6 w-6 text-primary' />
+                                </div>
+                                <div>
+                                    <p className='text-2xl font-bold'>
+                                        {totalEmails}
+                                    </p>
+                                    <p className='text-sm text-muted-foreground'>
+                                        Total Emails
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className='pt-6'>
+                            <div className='flex items-center gap-4'>
+                                <div className='flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10'>
+                                    <FolderOpen className='h-6 w-6 text-green-500' />
+                                </div>
+                                <div>
+                                    <p className='text-2xl font-bold'>
+                                        {categorizedEmails}
+                                    </p>
+                                    <p className='text-sm text-muted-foreground'>
+                                        Categorized
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className='pt-6'>
+                            <div className='flex items-center gap-4'>
+                                <div className='flex h-12 w-12 items-center justify-center rounded-full bg-orange-500/10'>
+                                    <Mail className='h-6 w-6 text-orange-500' />
+                                </div>
+                                <div>
+                                    <p className='text-2xl font-bold'>
+                                        {uncategorizedEmails}
+                                    </p>
+                                    <p className='text-sm text-muted-foreground'>
+                                        Needs Review
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
 
             {/* Three Sections Grid */}
             <div className='grid gap-6 md:grid-cols-1 lg:grid-cols-3'>
