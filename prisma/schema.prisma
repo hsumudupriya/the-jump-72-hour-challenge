@@ -1,0 +1,89 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User model - main user account
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String?
+  image         String?
+  emailAccounts EmailAccount[]
+  categories    Category[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+// EmailAccount model - connected Gmail accounts
+model EmailAccount {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String
+  accessToken  String    @db.Text
+  refreshToken String?   @db.Text
+  expiresAt    DateTime?
+  isActive     Boolean   @default(true)
+  isPrimary    Boolean   @default(false)
+  emails       Email[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, email])
+  @@index([userId])
+}
+
+// Category model - user-defined email categories
+model Category {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?  @db.Text
+  color       String   @default("#6366f1")
+  isDefault   Boolean  @default(false)
+  emails      Email[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+// Email model - imported and categorized emails
+model Email {
+  id              String        @id @default(cuid())
+  accountId       String
+  account         EmailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  category        Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  gmailId         String        @unique
+  threadId        String?
+  subject         String
+  snippet         String?       @db.Text
+  body            String?       @db.Text
+  bodyHtml        String?       @db.Text
+  from            String
+  to              String[]
+  headers         Json?
+  summary         String?       @db.Text
+  aiConfidence    Float?
+  unsubscribeLink String?
+  isRead          Boolean       @default(false)
+  isArchived      Boolean       @default(false)
+  receivedAt      DateTime
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([accountId, receivedAt])
+  @@index([categoryId])
+  @@index([gmailId])
+}

@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
+import { prisma } from './prisma';
 
 // Gmail API scopes we need
 const GMAIL_SCOPES = [
@@ -27,11 +28,58 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     callbacks: {
         async jwt({ token, account, profile }) {
             // Initial sign in
-            if (account) {
+            if (account && profile?.email) {
                 token.accessToken = account.access_token;
                 token.refreshToken = account.refresh_token;
                 token.expiresAt = account.expires_at;
-                token.email = profile?.email;
+                token.email = profile.email;
+
+                // Create or update user and email account in database
+                try {
+                    const user = await prisma.user.upsert({
+                        where: { email: profile.email },
+                        update: {
+                            name: profile.name,
+                            image: profile.picture as string | undefined,
+                        },
+                        create: {
+                            email: profile.email,
+                            name: profile.name,
+                            image: profile.picture as string | undefined,
+                        },
+                    });
+
+                    token.userId = user.id;
+
+                    // Create or update the email account (primary account on first sign in)
+                    await prisma.emailAccount.upsert({
+                        where: {
+                            userId_email: {
+                                userId: user.id,
+                                email: profile.email,
+                            },
+                        },
+                        update: {
+                            accessToken: account.access_token!,
+                            refreshToken: account.refresh_token,
+                            expiresAt: account.expires_at
+                                ? new Date(account.expires_at * 1000)
+                                : null,
+                        },
+                        create: {
+                            userId: user.id,
+                            email: profile.email,
+                            accessToken: account.access_token!,
+                            refreshToken: account.refresh_token,
+                            expiresAt: account.expires_at
+                                ? new Date(account.expires_at * 1000)
+                                : null,
+                            isPrimary: true,
+                        },
+                    });
+                } catch (error) {
+                    console.error('Error saving user to database:', error);
+                }
             }
 
             // Return previous token if the access token has not expired yet
@@ -67,6 +115,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
                     if (!response.ok) throw tokens;
 
+                    // Update access token in database
+                    if (token.userId && token.email) {
+                        await prisma.emailAccount.updateMany({
+                            where: {
+                                userId: token.userId as string,
+                                email: token.email as string,
+                            },
+                            data: {
+                                accessToken: tokens.access_token,
+                                refreshToken: tokens.refresh_token ?? undefined,
+                                expiresAt: new Date(
+                                    Date.now() + tokens.expires_in * 1000
+                                ),
+                            },
+                        });
+                    }
+
                     return {
                         ...token,
                         accessToken: tokens.access_token,
@@ -91,7 +156,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             session.accessToken = token.accessToken as string;
             session.error = token.error as string | undefined;
 
-            if (token.sub) {
+            if (token.userId) {
+                session.user.id = token.userId as string;
+            } else if (token.sub) {
                 session.user.id = token.sub;
             }
 
@@ -125,5 +192,7 @@ declare module 'next-auth' {
         refreshToken?: string;
         expiresAt?: number;
         error?: string;
+        userId?: string;
+        email?: string;
     }
 }
