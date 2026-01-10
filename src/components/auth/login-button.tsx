@@ -1,23 +1,18 @@
 'use client';
 
-import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { signInWithGoogle } from '@/app/actions/auth';
 
-interface LoginButtonProps {
-    callbackUrl?: string;
-}
-
-export function LoginButton({ callbackUrl = '/dashboard' }: LoginButtonProps) {
+export function LoginButton() {
     const [isLoading, setIsLoading] = useState(false);
 
     const handleSignIn = async () => {
         setIsLoading(true);
         try {
-            await signIn('google', { callbackUrl });
+            await signInWithGoogle();
         } catch (error) {
             console.error('Sign in error:', error);
-        } finally {
             setIsLoading(false);
         }
     };

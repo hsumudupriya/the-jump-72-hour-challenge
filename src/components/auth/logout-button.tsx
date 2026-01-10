@@ -1,9 +1,9 @@
 'use client';
 
-import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
 import { useState } from 'react';
+import { signOutAction } from '@/app/actions/auth';
 
 interface LogoutButtonProps {
     variant?:
@@ -25,7 +25,7 @@ export function LogoutButton({
     const handleSignOut = async () => {
         setIsLoading(true);
         try {
-            await signOut({ callbackUrl: '/' });
+            await signOutAction();
         } catch (error) {
             console.error('Sign out error:', error);
         } finally {
