@@ -9,6 +9,7 @@ import {
     extractUnsubscribeLink,
     parseEmailAddresses,
 } from './gmail';
+import { processEmailsForUser } from './ai';
 
 export interface SyncResult {
     accountId: string;
@@ -16,6 +17,7 @@ export interface SyncResult {
     fetched: number;
     stored: number;
     archived: number;
+    aiProcessed: number;
     errors: string[];
 }
 
@@ -23,12 +25,14 @@ export interface SyncOptions {
     maxEmails?: number;
     archiveAfterImport?: boolean;
     query?: string;
+    runAiProcessing?: boolean;
 }
 
 const DEFAULT_OPTIONS: SyncOptions = {
     maxEmails: 50,
     archiveAfterImport: true,
     query: 'in:inbox',
+    runAiProcessing: true,
 };
 
 /**
@@ -45,6 +49,7 @@ export async function syncEmailsForAccount(
         fetched: 0,
         stored: 0,
         archived: 0,
+        aiProcessed: 0,
         errors: [],
     };
 
@@ -142,17 +147,42 @@ export async function syncEmailsForAccount(
 export async function syncEmailsForUser(
     userId: string,
     options: SyncOptions = {}
-): Promise<SyncResult[]> {
+): Promise<{ results: SyncResult[]; aiStats: { categorized: number; summarized: number } }> {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
     const accounts = await prisma.emailAccount.findMany({
         where: { userId, isActive: true },
         select: { id: true },
     });
 
     const results = await Promise.all(
-        accounts.map((account) => syncEmailsForAccount(account.id, options))
+        accounts.map((account) => syncEmailsForAccount(account.id, opts))
     );
 
-    return results;
+    // Run AI processing after sync if enabled
+    let aiStats = { categorized: 0, summarized: 0 };
+    if (opts.runAiProcessing) {
+        try {
+            const processingStats = await processEmailsForUser(userId, {
+                limit: opts.maxEmails,
+            });
+            aiStats = {
+                categorized: processingStats.categorized,
+                summarized: processingStats.summarized,
+            };
+            
+            // Add AI processing count to results
+            for (const result of results) {
+                result.aiProcessed = processingStats.categorized + processingStats.summarized;
+            }
+        } catch (error) {
+            console.error('AI processing failed:', error);
+            for (const result of results) {
+                result.errors.push(`AI processing failed: ${error}`);
+            }
+        }
+    }
+
+    return { results, aiStats };
 }
 
 /**

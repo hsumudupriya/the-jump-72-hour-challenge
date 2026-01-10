@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { syncAllEmails } from '@/lib/email-sync';
+import { processAllEmails } from '@/lib/ai';
 
 // POST /api/cron/sync-emails - Cron job endpoint for Render
 // Protected by CRON_SECRET to prevent unauthorized access
@@ -33,7 +34,25 @@ export async function POST(request: Request) {
             archiveAfterImport: true,
         });
 
-        const duration = Date.now() - startTime;
+        const syncDuration = Date.now() - startTime;
+
+        // Run AI processing for all users
+        console.log('Starting AI processing...');
+        const aiStartTime = Date.now();
+        const aiResults = await processAllEmails({ limitPerUser: 20 });
+        const aiDuration = Date.now() - aiStartTime;
+
+        // Calculate AI totals
+        let aiCategorized = 0;
+        let aiSummarized = 0;
+        let aiErrors = 0;
+        for (const [, stats] of aiResults) {
+            aiCategorized += stats.categorized;
+            aiSummarized += stats.summarized;
+            aiErrors += stats.errors;
+        }
+
+        const totalDuration = Date.now() - startTime;
 
         // Calculate totals
         const totals = {
@@ -41,11 +60,17 @@ export async function POST(request: Request) {
             fetched: results.reduce((sum, r) => sum + r.fetched, 0),
             stored: results.reduce((sum, r) => sum + r.stored, 0),
             archived: results.reduce((sum, r) => sum + r.archived, 0),
+            aiCategorized,
+            aiSummarized,
+            aiErrors,
             errors: results.flatMap((r) => r.errors),
         };
 
         console.log(
-            `Sync completed in ${duration}ms: ${totals.stored} emails stored, ${totals.archived} archived`
+            `Sync completed in ${syncDuration}ms: ${totals.stored} emails stored, ${totals.archived} archived`
+        );
+        console.log(
+            `AI processing completed in ${aiDuration}ms: ${aiCategorized} categorized, ${aiSummarized} summarized`
         );
 
         if (totals.errors.length > 0) {
@@ -54,7 +79,9 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
-            duration,
+            duration: totalDuration,
+            syncDuration,
+            aiDuration,
             ...totals,
         });
     } catch (error) {
