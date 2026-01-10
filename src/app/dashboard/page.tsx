@@ -10,6 +10,10 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, Mail, FolderOpen, Link as LinkIcon } from 'lucide-react';
+import {
+    CategoryListItem,
+    CreateCategoryDialog,
+} from '@/components/categories';
 
 export default async function DashboardPage() {
     const session = await auth();
@@ -18,24 +22,27 @@ export default async function DashboardPage() {
         redirect('/login');
     }
 
-    // Fetch connected accounts from database
-    const accounts: {
-        id: string;
-        email: string;
-        isPrimary: boolean;
-        isActive: boolean;
-        _count: { emails: number };
-    }[] = await prisma.emailAccount.findMany({
-        where: { userId: session.user.id },
-        select: {
-            id: true,
-            email: true,
-            isPrimary: true,
-            isActive: true,
-            _count: { select: { emails: true } },
-        },
-        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-    });
+    // Fetch connected accounts and categories from database
+    const [accounts, categories] = await Promise.all([
+        prisma.emailAccount.findMany({
+            where: { userId: session.user.id },
+            select: {
+                id: true,
+                email: true,
+                isPrimary: true,
+                isActive: true,
+                _count: { select: { emails: true } },
+            },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        }),
+        prisma.category.findMany({
+            where: { userId: session.user.id },
+            include: {
+                _count: { select: { emails: true } },
+            },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        }),
+    ]);
 
     return (
         <div className='space-y-8'>
@@ -108,7 +115,7 @@ export default async function DashboardPage() {
                     </CardContent>
                 </Card>
 
-                {/* Categories Section - Placeholder for Module 4 */}
+                {/* Categories Section */}
                 <Card className='lg:col-span-2'>
                     <CardHeader>
                         <div className='flex items-center justify-between'>
@@ -118,10 +125,7 @@ export default async function DashboardPage() {
                                     Email Categories
                                 </CardTitle>
                             </div>
-                            <Button size='sm' className='gap-1' disabled>
-                                <Plus className='h-4 w-4' />
-                                Add Category
-                            </Button>
+                            <CreateCategoryDialog />
                         </div>
                         <CardDescription>
                             Define categories with descriptions for AI to sort
@@ -129,16 +133,37 @@ export default async function DashboardPage() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className='rounded-lg border border-dashed p-8 text-center'>
-                            <FolderOpen className='mx-auto h-12 w-12 text-muted-foreground/50' />
-                            <h3 className='mt-4 font-medium'>
-                                No categories yet
-                            </h3>
-                            <p className='mt-2 text-sm text-muted-foreground'>
-                                Category management will be available in Module
-                                4
-                            </p>
-                        </div>
+                        {categories.length === 0 ? (
+                            <div className='rounded-lg border border-dashed p-8 text-center'>
+                                <FolderOpen className='mx-auto h-12 w-12 text-muted-foreground/50' />
+                                <h3 className='mt-4 font-medium'>
+                                    No categories yet
+                                </h3>
+                                <p className='mt-2 text-sm text-muted-foreground'>
+                                    Create your first category to start
+                                    organizing emails with AI
+                                </p>
+                                <div className='mt-4'>
+                                    <CreateCategoryDialog
+                                        trigger={
+                                            <Button className='gap-1'>
+                                                <Plus className='h-4 w-4' />
+                                                Create Category
+                                            </Button>
+                                        }
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className='grid gap-4 sm:grid-cols-2'>
+                                {categories.map((category) => (
+                                    <CategoryListItem
+                                        key={category.id}
+                                        category={category}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
@@ -157,6 +182,7 @@ export default async function DashboardPage() {
                                 {
                                     user: session.user,
                                     accountsCount: accounts.length,
+                                    categoriesCount: categories.length,
                                     hasAccessToken: !!session.accessToken,
                                     error: session.error,
                                 },
