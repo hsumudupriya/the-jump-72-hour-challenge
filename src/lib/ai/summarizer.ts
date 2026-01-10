@@ -30,18 +30,36 @@ export async function summarizeEmail(
     try {
         const prompt = buildSummarizationPrompt(email);
 
-        const response = await genai.models.generateContent({
+        // Use streaming to ensure we get the complete response
+        const responseStream = await genai.models.generateContentStream({
             model: GEMINI_MODEL,
             contents: prompt,
             config: {
-                temperature: 0.3, // Slightly higher for more natural summaries
+                temperature: 0.3,
                 topP: 0.9,
                 topK: 40,
-                maxOutputTokens: 128,
+                maxOutputTokens: 512,
+                // Disable thinking for faster, more direct responses
+                thinkingConfig: {
+                    thinkingBudget: 0,
+                },
             },
         });
 
-        let text = response.text?.trim();
+        // Collect all chunks to get the complete response
+        const chunks: string[] = [];
+        for await (const chunk of responseStream) {
+            if (chunk.text) {
+                chunks.push(chunk.text);
+            }
+        }
+
+        let text = chunks.join('').trim();
+        console.log(
+            `Summarization AI response (Email: ${email.subject}):`,
+            text
+        );
+
         if (!text) {
             console.warn('Empty response from Gemini for summarization');
             return email.subject.slice(0, MAX_SUMMARY_LENGTH);

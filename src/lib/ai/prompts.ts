@@ -63,7 +63,7 @@ export function buildSummarizationPrompt(email: {
 }): string {
     const emailContent = email.body?.slice(0, 3000) || email.snippet || '';
 
-    return `You are an email summarization assistant. Create a concise summary of the following email.
+    return `Summarize this email in 1-2 complete sentences (maximum 280 characters total).
 
 ## Email:
 **From:** ${email.from}
@@ -73,10 +73,10 @@ ${emailContent}
 
 ## Instructions:
 1. Summarize the key points of the email
-2. Keep the summary under 280 characters
-3. Focus on actionable items or main purpose
-4. Use plain, professional language
-5. Do not include "Summary:" prefix
+2. Focus on actionable items or main purpose
+3. Use plain, professional language
+4. Do not include "Summary:" prefix
+5. Do not include content from the subject in the summary
 
 ## Response Format:
 Respond with ONLY the summary text, nothing else. No quotes, no markdown, just the plain text summary.`;

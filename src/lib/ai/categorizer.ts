@@ -33,18 +33,36 @@ export async function categorizeEmail(
     try {
         const prompt = buildCategorizationPrompt(email, categories);
 
-        const response = await genai.models.generateContent({
+        // Use streaming to ensure we get the complete response
+        const responseStream = await genai.models.generateContentStream({
             model: GEMINI_MODEL,
             contents: prompt,
             config: {
                 temperature: 0.2,
                 topP: 0.8,
                 topK: 40,
-                maxOutputTokens: 256,
+                maxOutputTokens: 512,
+                // Disable thinking for faster, more direct responses
+                thinkingConfig: {
+                    thinkingBudget: 0,
+                },
             },
         });
 
-        const text = response.text?.trim();
+        // Collect all chunks to get the complete response
+        const chunks: string[] = [];
+        for await (const chunk of responseStream) {
+            if (chunk.text) {
+                chunks.push(chunk.text);
+            }
+        }
+
+        const text = chunks.join('').trim();
+        console.log(
+            `Categorization AI response (Email: ${email.subject}):`,
+            text
+        );
+
         if (!text) {
             console.warn('Empty response from Gemini for categorization');
             return { categoryId: null, confidence: 0 };
