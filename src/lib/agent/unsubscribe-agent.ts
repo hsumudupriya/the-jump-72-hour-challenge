@@ -145,6 +145,7 @@ HTML content:
 ${contentToAnalyze}
 
 Respond with ONLY valid JSON, no markdown.`;
+        // console.log('Unsubscribe analysis prompt:', prompt);
 
         try {
             const response = await genai.models.generateContentStream({
@@ -186,6 +187,28 @@ Respond with ONLY valid JSON, no markdown.`;
         }
     }
 
+    /**
+     * Performs the unsubscribe action based on the analyzed page structure.
+     *
+     * This method handles different unsubscribe scenarios:
+     * - Already unsubscribed pages
+     * - Form-based unsubscriptions (with optional email input and checkbox selection)
+     * - Button-based unsubscriptions (attempting multiple selector strategies)
+     * - Fallback attempts for unknown page structures
+     *
+     * The method will attempt to click buttons using both CSS selectors and text-based matching,
+     * including `input[type="submit"]` and `input[type="button"]` elements.
+     *
+     * @param analysis - The page analysis result containing action type, selectors, and success indicators
+     * @param email - Optional email address to fill in forms that require it
+     * @returns A promise resolving to an object containing:
+     *          - `success`: Whether the unsubscribe action was successful
+     *          - `message`: A descriptive message about the outcome
+     *
+     * @remarks
+     * After performing actions, the method waits for page navigation and validates success
+     * by checking if any success indicators appear in the updated page content.
+     */
     private async performUnsubscribeAction(
         analysis: PageAnalysis,
         email?: string
@@ -268,17 +291,23 @@ Respond with ONLY valid JSON, no markdown.`;
 
                 for (const selector of buttonSelectors) {
                     clicked = await this.browser.findAndClickButton([selector]);
+                    console.log(
+                        'Clicked unsubscribe button by selector: ' + selector,
+                        clicked
+                    );
                     if (clicked) break;
                 }
-                console.log('Clicked unsubscribe button by selector:', clicked);
 
                 // If no selector worked, try by text
                 if (!clicked) {
                     clicked = await this.browser.findAndClickByText(
                         buttonTexts
                     );
+                    console.log(
+                        'Clicked unsubscribe button by text: ' + buttonTexts,
+                        clicked
+                    );
                 }
-                console.log('Clicked unsubscribe button by text:', clicked);
 
                 if (clicked) {
                     await this.browser.waitForNavigation(3000);

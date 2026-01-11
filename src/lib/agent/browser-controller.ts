@@ -74,13 +74,51 @@ export class BrowserController {
             try {
                 const element = await this.page.$(selector);
                 if (element) {
-                    await element.click();
-                    await this.page.waitForLoadState('networkidle', {
-                        timeout: 5000,
-                    });
+                    // Check if element is visible before clicking
+                    const isVisible = await element
+                        .isVisible()
+                        .catch(() => false);
+                    console.log(
+                        'Trying selector:',
+                        selector,
+                        'Found:',
+                        !!element,
+                        'Visible:',
+                        isVisible
+                    );
+
+                    if (!isVisible) {
+                        // Try to scroll element into view
+                        await element.scrollIntoViewIfNeeded().catch(() => {});
+                    }
+
+                    // Try clicking with force if needed
+                    try {
+                        await element.click({ timeout: 5000 });
+                    } catch (clickError) {
+                        console.log(
+                            'Normal click failed, trying force click:',
+                            clickError
+                        );
+                        await element.click({ force: true, timeout: 5000 });
+                    }
+
+                    // Wait for navigation, but don't fail if it times out
+                    try {
+                        await this.page.waitForLoadState('domcontentloaded', {
+                            timeout: 5000,
+                        });
+                    } catch (error) {
+                        // Navigation timeout is okay, page might not navigate
+                        console.log(
+                            'Navigation wait timed out, continuing.',
+                            error
+                        );
+                    }
                     return true;
                 }
-            } catch {
+            } catch (error) {
+                console.log('Error with selector', selector, ':', error);
                 // Try next selector
             }
         }
@@ -102,13 +140,19 @@ export class BrowserController {
                     );
                     if (element && (await element.isVisible())) {
                         await element.click();
-                        await this.page.waitForLoadState('networkidle', {
+                        await this.page.waitForLoadState('domcontentloaded', {
                             timeout: 5000,
                         });
                         return true;
                     }
                 } catch {
                     // Try next pattern
+                    console.log(
+                        'Error clicking element by text:',
+                        pattern,
+                        'of type:',
+                        elementType
+                    );
                 }
             }
         }
@@ -181,7 +225,7 @@ export class BrowserController {
 
     async waitForNavigation(timeout: number = 5000): Promise<void> {
         if (!this.page) throw new Error('Browser not launched');
-        await this.page.waitForLoadState('networkidle', { timeout });
+        await this.page.waitForLoadState('domcontentloaded', { timeout });
     }
 
     async getTitle(): Promise<string> {
@@ -257,29 +301,73 @@ export class BrowserController {
                     form.querySelectorAll('input, button, select').length > 0
                 ) {
                     // Simplified form representation
-                    const inputs = Array.from(
-                        form.querySelectorAll('input, select, textarea')
-                    ).map((input) => {
-                        const el = input as HTMLInputElement;
-                        return `<input type="${el.type || 'text'}" name="${
-                            el.name || ''
-                        }" id="${el.id || ''}" placeholder="${
-                            el.placeholder || ''
-                        }" />`;
-                    });
+                    // const inputs = Array.from(
+                    //     form.querySelectorAll('input, select, textarea')
+                    // )
+                    //     .filter((input) => {
+                    //         const el = input as HTMLElement;
+                    //         return (
+                    //             el.offsetParent !== null &&
+                    //             el.offsetWidth > 0 &&
+                    //             el.offsetHeight > 0
+                    //         );
+                    //     })
+                    //     .map((input) => {
+                    //         const el = input as HTMLInputElement;
+                    //         return `<input type="${el.type || 'text'}" name="${
+                    //             el.name || ''
+                    //         }" id="${el.id || ''}" class="${
+                    //             el.className || ''
+                    //         }" placeholder="${el.placeholder || ''}" />`;
+                    //     });
                     const buttons = Array.from(
-                        form.querySelectorAll('button, input[type="submit"]')
-                    ).map((btn) => {
-                        return `<button>${
-                            btn.textContent?.trim() || ''
-                        }</button>`;
-                    });
+                        form.querySelectorAll(
+                            'button, input[type="submit"], input[type="button"]'
+                        )
+                    )
+                        .filter((btn) => {
+                            const el = btn as HTMLElement;
+                            return (
+                                el.offsetParent !== null &&
+                                el.offsetWidth > 0 &&
+                                el.offsetHeight > 0
+                            );
+                        })
+                        .map((btn) => {
+                            const el = btn as HTMLElement;
+                            const tagName = el.tagName.toLowerCase();
+
+                            if (tagName === 'button') {
+                                return `<button type="${
+                                    (el as HTMLButtonElement).type || 'button'
+                                }" id="${el.id || ''}" class="${
+                                    el.className || ''
+                                }" name="${
+                                    (el as HTMLButtonElement).name || ''
+                                }">${btn.textContent?.trim() || ''}</button>`;
+                            } else {
+                                return `<input type="${
+                                    (el as HTMLInputElement).type
+                                }" id="${el.id || ''}" class="${
+                                    el.className || ''
+                                }" name="${
+                                    (el as HTMLInputElement).name || ''
+                                }" value="${
+                                    (el as HTMLInputElement).value || ''
+                                }" />`;
+                            }
+                        });
+                    // results.forms.push(
+                    //     `<form action="${form.action || ''}" method="${
+                    //         form.method || ''
+                    //     }">\n${inputs.join('\n')}\n${buttons.join(
+                    //         '\n'
+                    //     )}\n</form>`
+                    // );
                     results.forms.push(
                         `<form action="${form.action || ''}" method="${
                             form.method || ''
-                        }">\n${inputs.join('\n')}\n${buttons.join(
-                            '\n'
-                        )}\n</form>`
+                        }">\n${buttons.join('\n')}\n</form>`
                     );
                 }
             });
@@ -295,7 +383,8 @@ export class BrowserController {
                     if (
                         matchesKeyword(text) ||
                         matchesKeyword(el.className) ||
-                        matchesKeyword(el.id)
+                        matchesKeyword(el.id) ||
+                        matchesKeyword(el.getAttribute('value') || '')
                     ) {
                         results.buttons.push(getElementContext(btn));
                     }
@@ -327,7 +416,7 @@ export class BrowserController {
                     clone
                         .querySelectorAll('script, style, noscript, img')
                         .forEach((s) => s.remove());
-                    const html = clone.innerHTML.slice(0, 3000);
+                    const html = clone.outerHTML.slice(0, 3000);
                     if (html.trim()) {
                         results.relevantSections.push(html);
                     }
