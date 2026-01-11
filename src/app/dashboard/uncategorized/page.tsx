@@ -29,6 +29,9 @@ async function getUncategorizedEmails(userId: string) {
             category: {
                 select: { id: true, name: true, color: true },
             },
+            account: {
+                select: { email: true },
+            },
         },
         orderBy: { receivedAt: 'desc' },
     });
@@ -43,6 +46,7 @@ async function getUncategorizedEmails(userId: string) {
                   color: email.category.color || '#6b7280',
               }
             : null,
+        account: email.account ? { email: email.account.email } : null,
     }));
 
     return transformedEmails;

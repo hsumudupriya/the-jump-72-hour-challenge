@@ -21,6 +21,9 @@ export interface EmailData {
         name: string;
         color: string;
     } | null;
+    account?: {
+        email: string;
+    } | null;
 }
 
 interface EmailCardProps {
@@ -115,6 +118,14 @@ export function EmailCard({
 
                 {/* Footer */}
                 <div className='flex items-center gap-2 pt-1'>
+                    {email.account && (
+                        <Badge
+                            variant='outline'
+                            className='text-xs'
+                        >
+                            {email.account.email.split('@')[0]}
+                        </Badge>
+                    )}
                     {email.category && (
                         <Badge
                             variant='secondary'

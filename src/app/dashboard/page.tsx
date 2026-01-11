@@ -16,6 +16,7 @@ import {
     UncategorizedCard,
 } from '@/components/categories';
 import { SyncEmailsButton } from '@/components/emails';
+import { AddAccountButton } from '@/components/dashboard';
 
 export default async function DashboardPage() {
     const session = await auth();
@@ -141,16 +142,7 @@ export default async function DashboardPage() {
                                     Connected Accounts
                                 </CardTitle>
                             </div>
-                            <Button
-                                size='sm'
-                                variant='outline'
-                                className='gap-1'
-                                disabled
-                                title='Coming soon: Connect additional Gmail accounts'
-                            >
-                                <Plus className='h-4 w-4' />
-                                Add
-                            </Button>
+                            <AddAccountButton />
                         </div>
                         <CardDescription>
                             Connect Gmail accounts to sync across multiple
