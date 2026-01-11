@@ -30,7 +30,9 @@ export function BulkActionsBar({
     onClearSelection,
 }: BulkActionsBarProps) {
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isUnsubscribing, setIsUnsubscribing] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [showUnsubscribeDialog, setShowUnsubscribeDialog] = useState(false);
 
     const emailsWithUnsubscribe = selectedEmails.filter(
         (e) => e.unsubscribeLink
@@ -58,6 +60,45 @@ export function BulkActionsBar({
         } finally {
             setIsDeleting(false);
             setShowDeleteDialog(false);
+        }
+    };
+
+    const handleUnsubscribe = async () => {
+        setIsUnsubscribing(true);
+        try {
+            const emailIdsWithLinks = emailsWithUnsubscribe.map((e) => e.id);
+
+            const response = await fetch('/api/unsubscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emailIds: emailIdsWithLinks }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to unsubscribe');
+            }
+
+            const data = await response.json();
+
+            if (data.successCount > 0) {
+                toast.success(
+                    `Successfully unsubscribed from ${data.successCount} of ${data.processed} emails`
+                );
+            }
+
+            if (data.failedCount > 0) {
+                toast.warning(
+                    `Failed to unsubscribe from ${data.failedCount} emails. You may need to unsubscribe manually.`
+                );
+            }
+
+            onComplete();
+        } catch (error) {
+            console.error('Unsubscribe error:', error);
+            toast.error('Failed to process unsubscribe requests');
+        } finally {
+            setIsUnsubscribing(false);
+            setShowUnsubscribeDialog(false);
         }
     };
 
@@ -92,22 +133,14 @@ export function BulkActionsBar({
                             variant='outline'
                             size='sm'
                             className='gap-2'
-                            onClick={() => {
-                                // Open unsubscribe links in new tabs
-                                emailsWithUnsubscribe.forEach((email) => {
-                                    if (email.unsubscribeLink) {
-                                        window.open(
-                                            email.unsubscribeLink,
-                                            '_blank'
-                                        );
-                                    }
-                                });
-                                toast.info(
-                                    `Opened ${emailsWithUnsubscribe.length} unsubscribe links`
-                                );
-                            }}
+                            onClick={() => setShowUnsubscribeDialog(true)}
+                            disabled={isUnsubscribing}
                         >
-                            <Link2Off className='h-4 w-4' />
+                            {isUnsubscribing ? (
+                                <Loader2 className='h-4 w-4 animate-spin' />
+                            ) : (
+                                <Link2Off className='h-4 w-4' />
+                            )}
                             Unsubscribe ({emailsWithUnsubscribe.length})
                         </Button>
                     )}
@@ -147,6 +180,37 @@ export function BulkActionsBar({
                                 <Loader2 className='h-4 w-4 animate-spin mr-2' />
                             ) : null}
                             Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Unsubscribe confirmation dialog */}
+            <AlertDialog
+                open={showUnsubscribeDialog}
+                onOpenChange={setShowUnsubscribeDialog}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Unsubscribe from Emails
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            The AI agent will attempt to automatically
+                            unsubscribe you from {emailsWithUnsubscribe.length}{' '}
+                            email
+                            {emailsWithUnsubscribe.length === 1 ? '' : 's'}.
+                            This may take a moment as it navigates each
+                            unsubscribe page.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleUnsubscribe}>
+                            {isUnsubscribing ? (
+                                <Loader2 className='h-4 w-4 animate-spin mr-2' />
+                            ) : null}
+                            Unsubscribe
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
