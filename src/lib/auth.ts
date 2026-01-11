@@ -26,6 +26,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }),
     ],
     callbacks: {
+        async signIn({ profile }) {
+            // Block sign-in if this email is linked as a secondary account to another user
+            if (profile?.email) {
+                const linkedAsSecondary = await prisma.emailAccount.findFirst({
+                    where: {
+                        email: profile.email,
+                        isPrimary: false,
+                    },
+                    include: { user: true },
+                });
+
+                if (linkedAsSecondary) {
+                    console.error(
+                        `Sign-in denied: ${profile.email} is linked as secondary account to user ${linkedAsSecondary.user.email}`
+                    );
+                    // Return false to deny sign-in, or a URL to redirect to an error page
+                    return '/login?error=EmailLinkedToOtherUser';
+                }
+            }
+            return true;
+        },
         async jwt({ token, account, profile }) {
             // Initial sign in
             if (account && profile?.email) {

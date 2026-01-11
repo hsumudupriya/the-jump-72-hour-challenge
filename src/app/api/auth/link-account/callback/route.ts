@@ -102,7 +102,25 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Check if this account is already linked
+        // Check if this email is already linked to a DIFFERENT user
+        const accountLinkedToOtherUser = await prisma.emailAccount.findFirst({
+            where: {
+                email: newAccountEmail,
+                userId: { not: userId },
+            },
+        });
+
+        if (accountLinkedToOtherUser) {
+            return new NextResponse(
+                generateCallbackHTML({
+                    success: false,
+                    error: 'This Gmail account is already linked to another user',
+                }),
+                { headers: { 'Content-Type': 'text/html' } }
+            );
+        }
+
+        // Check if this account is already linked to current user
         const existingAccount = await prisma.emailAccount.findUnique({
             where: {
                 userId_email: {
