@@ -231,7 +231,9 @@ export default async function DashboardPage() {
                             <div className='grid gap-4 sm:grid-cols-2'>
                                 {/* Uncategorized emails card */}
                                 {uncategorizedEmails > 0 && (
-                                    <UncategorizedCard count={uncategorizedEmails} />
+                                    <UncategorizedCard
+                                        count={uncategorizedEmails}
+                                    />
                                 )}
                                 {categories.map((category) => (
                                     <CategoryListItem

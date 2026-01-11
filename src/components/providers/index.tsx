@@ -13,7 +13,7 @@ export function Providers({ children }: ProvidersProps) {
         <AuthProvider>
             <QueryProvider>
                 {children}
-                <Toaster position='top-right' richColors />
+                <Toaster position='top-right' expand={true} richColors />
             </QueryProvider>
         </AuthProvider>
     );
