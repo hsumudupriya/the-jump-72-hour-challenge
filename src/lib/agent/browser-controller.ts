@@ -62,6 +62,22 @@ export class BrowserController {
         return this.page.content();
     }
 
+    /**
+     * Get only the visible text content from the page body
+     * Useful for analyzing response pages without HTML noise
+     */
+    async getBodyTextContent(): Promise<string> {
+        if (!this.page) throw new Error('Browser not launched');
+        return this.page.evaluate(() => {
+            // Remove script and style elements before getting text
+            const body = document.body.cloneNode(true) as HTMLElement;
+            body.querySelectorAll('script, style, noscript').forEach((el) =>
+                el.remove()
+            );
+            return body.innerText || body.textContent || '';
+        });
+    }
+
     async screenshot(): Promise<Buffer> {
         if (!this.page) throw new Error('Browser not launched');
         return this.page.screenshot({ fullPage: true });

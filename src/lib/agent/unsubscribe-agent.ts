@@ -5,7 +5,8 @@ export interface UnsubscribeResult {
     url: string;
     success: boolean;
     message: string;
-    screenshotBase64?: string;
+    screenshotBeforeBase64?: string;
+    screenshotAfterBase64?: string;
 }
 
 interface PageAnalysis {
@@ -14,8 +15,18 @@ interface PageAnalysis {
     hasForm: boolean;
     formFields?: string[];
     requiresEmail: boolean;
-    successIndicators: string[];
     nextAction: 'click_button' | 'fill_form' | 'already_done' | 'unknown';
+}
+
+interface UnsubscribeResultAnalysis {
+    success: boolean;
+    reason: string;
+    status:
+        | 'unsubscribed'
+        | 'already_unsubscribed'
+        | 'error'
+        | 'unknown'
+        | 'requires_action';
 }
 
 /**
@@ -42,6 +53,9 @@ export class UnsubscribeAgent {
                 };
             }
 
+            // Take screenshot before action
+            const screenshotBefore = await this.browser.screenshot();
+
             // Extract relevant elements and analyze the page using AI
             const extractedElements =
                 await this.browser.extractUnsubscribeElements();
@@ -57,14 +71,15 @@ export class UnsubscribeAgent {
             const result = await this.performUnsubscribeAction(analysis, email);
             console.log('Unsubscribe action result:', result);
 
-            // Take a screenshot for verification
-            const screenshot = await this.browser.screenshot();
+            // Take screenshot after action
+            const screenshotAfter = await this.browser.screenshot();
 
             return {
                 url,
                 success: result.success,
                 message: result.message,
-                screenshotBase64: screenshot.toString('base64'),
+                screenshotBeforeBase64: screenshotBefore.toString('base64'),
+                screenshotAfterBase64: screenshotAfter.toString('base64'),
             };
         } catch (error) {
             console.error('Unsubscribe error:', error);
@@ -125,7 +140,6 @@ export class UnsubscribeAgent {
 - hasForm: boolean - is there a form to fill
 - formFields: string[] - list of form field names/ids if form exists
 - requiresEmail: boolean - does the form require email input
-- successIndicators: string[] - text phrases that indicate successful unsubscribe
 - nextAction: "click_button" | "fill_form" | "already_done" | "unknown"
 
 Extracted page elements:
@@ -138,7 +152,6 @@ Respond with ONLY valid JSON, no markdown.`
 - hasForm: boolean - is there a form to fill
 - formFields: string[] - list of form field names/ids if form exists
 - requiresEmail: boolean - does the form require email input
-- successIndicators: string[] - text phrases that indicate successful unsubscribe
 - nextAction: "click_button" | "fill_form" | "already_done" | "unknown"
 
 HTML content:
@@ -176,12 +189,6 @@ Respond with ONLY valid JSON, no markdown.`;
                 hasUnsubscribeButton: true,
                 hasForm: false,
                 requiresEmail: false,
-                successIndicators: [
-                    'unsubscribed',
-                    'success',
-                    'removed',
-                    'confirmed',
-                ],
                 nextAction: 'click_button',
             };
         }
@@ -267,18 +274,17 @@ Respond with ONLY valid JSON, no markdown.`;
         if (formSubmitted) {
             // Wait for page to update
             await this.browser.waitForNavigation(3000);
-            const pageContent = await this.browser.getPageContent();
+            // Get only visible text content for cleaner analysis
+            const bodyText = await this.browser.getBodyTextContent();
 
-            // Check for success indicators
-            const isSuccess = analysis.successIndicators.some((indicator) =>
-                pageContent.toLowerCase().includes(indicator.toLowerCase())
+            // Analyze the response page
+            const resultAnalysis = await this.analyzeUnsubscribeResult(
+                bodyText
             );
 
             return {
-                success: isSuccess,
-                message: isSuccess
-                    ? 'Successfully unsubscribed'
-                    : 'Form submitted, but success could not be verified',
+                success: resultAnalysis.success,
+                message: resultAnalysis.reason,
             };
         }
 
@@ -337,23 +343,173 @@ Respond with ONLY valid JSON, no markdown.`;
 
         if (clicked) {
             await this.browser.waitForNavigation(3000);
-            const pageContent = await this.browser.getPageContent();
+            // Get only visible text content for cleaner analysis
+            const bodyText = await this.browser.getBodyTextContent();
 
-            const isSuccess = analysis.successIndicators.some((indicator) =>
-                pageContent.toLowerCase().includes(indicator.toLowerCase())
+            // Analyze the response page
+            const resultAnalysis = await this.analyzeUnsubscribeResult(
+                bodyText
             );
 
             return {
-                success: isSuccess,
-                message: isSuccess
-                    ? 'Successfully unsubscribed'
-                    : 'Button clicked, but success could not be verified',
+                success: resultAnalysis.success,
+                message: resultAnalysis.reason,
             };
         }
 
         return {
             success: false,
             message: 'Could not find unsubscribe button',
+        };
+    }
+
+    /**
+     * Analyze the response page after unsubscribe action
+     * Uses heuristics first, falls back to AI for ambiguous cases
+     */
+    private async analyzeUnsubscribeResult(
+        bodyText: string
+    ): Promise<UnsubscribeResultAnalysis> {
+        console.log('Analyzing unsubscribe result body text:', bodyText);
+        // Try heuristics first to save API tokens
+        const heuristicResult =
+            this.analyzeUnsubscribeResultWithHeuristics(bodyText);
+        console.log('Heuristic unsubscribe result:', heuristicResult);
+
+        // If heuristics found a definitive result, return it
+        if (heuristicResult.status !== 'unknown') {
+            return heuristicResult;
+        }
+
+        // Fall back to AI for ambiguous cases
+        const truncatedContent = bodyText.slice(0, 10000);
+
+        const prompt = `Analyze this page content after an unsubscribe action was attempted. Determine if the unsubscription was successful.
+
+Return a JSON object with:
+- success: boolean - true if unsubscribe was successful, false otherwise
+- reason: string - brief explanation of the result (e.g., "Successfully unsubscribed from mailing list", "Link has expired", "Email not found")
+- status: one of "unsubscribed" | "already_unsubscribed" | "error" | "unknown" | "requires_action"
+
+Look for:
+- Success indicators: "successfully unsubscribed", "you have been removed", "unsubscribe confirmed", "preferences updated"
+- Already done indicators: "already unsubscribed", "not subscribed", "email not found in list"
+- Error indicators: "link expired", "invalid token", "error occurred", "something went wrong"
+- Requires action: "confirm your email", "check your inbox", "one more step"
+
+Page content:
+${truncatedContent}
+
+Respond with ONLY valid JSON, no markdown.`;
+
+        try {
+            const response = await genai.models.generateContentStream({
+                model: 'gemini-2.5-flash',
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                config: {
+                    temperature: 0.1,
+                    thinkingConfig: { thinkingBudget: 0 },
+                },
+            });
+
+            let text = '';
+            for await (const chunk of response) {
+                text += chunk.text || '';
+            }
+
+            const cleanedText = text
+                .replace(/```json\n?/g, '')
+                .replace(/```\n?/g, '')
+                .trim();
+
+            return JSON.parse(cleanedText);
+        } catch (error) {
+            console.error('AI result analysis error:', error);
+            // Return heuristic result if AI fails
+            return heuristicResult;
+        }
+    }
+
+    /**
+     * Fallback heuristic analysis when AI fails
+     */
+    private analyzeUnsubscribeResultWithHeuristics(
+        pageContent: string
+    ): UnsubscribeResultAnalysis {
+        const lowerContent = pageContent.toLowerCase();
+
+        // Success patterns
+        const successPatterns = [
+            'successfully unsubscribed',
+            'you have been unsubscribed',
+            'unsubscribe confirmed',
+            'removed from',
+            'you have been removed',
+            'preferences updated',
+            'subscription cancelled',
+            'opt-out successful',
+            'you will no longer receive',
+        ];
+
+        // Already unsubscribed patterns
+        const alreadyDonePatterns = [
+            'already unsubscribed',
+            'not subscribed',
+            'email not found',
+            'not on our list',
+            'no subscription found',
+        ];
+
+        // Error patterns
+        const errorPatterns = [
+            'link expired',
+            'link has expired',
+            'invalid token',
+            'token expired',
+            'error occurred',
+            'something went wrong',
+            'unable to process',
+            'request failed',
+        ];
+
+        // Check for success
+        for (const pattern of successPatterns) {
+            if (lowerContent.includes(pattern)) {
+                return {
+                    success: true,
+                    reason: 'Successfully unsubscribed',
+                    status: 'unsubscribed',
+                };
+            }
+        }
+
+        // Check for already unsubscribed
+        for (const pattern of alreadyDonePatterns) {
+            if (lowerContent.includes(pattern)) {
+                return {
+                    success: true,
+                    reason: 'Already unsubscribed or not subscribed',
+                    status: 'already_unsubscribed',
+                };
+            }
+        }
+
+        // Check for errors
+        for (const pattern of errorPatterns) {
+            if (lowerContent.includes(pattern)) {
+                return {
+                    success: false,
+                    reason: 'Unsubscribe failed - ' + pattern,
+                    status: 'error',
+                };
+            }
+        }
+
+        // Unknown result
+        return {
+            success: false,
+            reason: 'Could not verify unsubscribe result',
+            status: 'unknown',
         };
     }
 
