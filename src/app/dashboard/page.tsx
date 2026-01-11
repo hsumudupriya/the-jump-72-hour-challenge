@@ -13,6 +13,7 @@ import { Plus, Mail, FolderOpen, Link as LinkIcon, Inbox } from 'lucide-react';
 import {
     CategoryListItem,
     CreateCategoryDialog,
+    UncategorizedCard,
 } from '@/components/categories';
 import { SyncEmailsButton } from '@/components/emails';
 
@@ -228,6 +229,10 @@ export default async function DashboardPage() {
                             </div>
                         ) : (
                             <div className='grid gap-4 sm:grid-cols-2'>
+                                {/* Uncategorized emails card */}
+                                {uncategorizedEmails > 0 && (
+                                    <UncategorizedCard count={uncategorizedEmails} />
+                                )}
                                 {categories.map((category) => (
                                     <CategoryListItem
                                         key={category.id}
