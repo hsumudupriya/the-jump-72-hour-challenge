@@ -42,12 +42,20 @@ export class UnsubscribeAgent {
                 };
             }
 
-            // Analyze the page using AI
-            const pageContent = await this.browser.getPageContent();
-            const analysis = await this.analyzePageWithAI(pageContent);
+            // Extract relevant elements and analyze the page using AI
+            const extractedElements =
+                await this.browser.extractUnsubscribeElements();
+            const fullPageContent = await this.browser.getPageContent();
+            const analysis = await this.analyzePageWithAI(
+                extractedElements,
+                fullPageContent
+            );
+            console.log('Extracted elements:', extractedElements);
+            console.log('Unsubscribe page analysis:', analysis);
 
             // Take action based on analysis
             const result = await this.performUnsubscribeAction(analysis, email);
+            console.log('Unsubscribe action result:', result);
 
             // Take a screenshot for verification
             const screenshot = await this.browser.screenshot();
@@ -74,12 +82,57 @@ export class UnsubscribeAgent {
     }
 
     private async analyzePageWithAI(
-        pageContent: string
+        extractedElements: {
+            forms: string[];
+            buttons: string[];
+            links: string[];
+            relevantSections: string[];
+        },
+        fullPageContent: string
     ): Promise<PageAnalysis> {
-        // Truncate content if too long
-        const truncatedContent = pageContent.slice(0, 15000);
+        // Build content from extracted elements
+        const extractedContent = [
+            extractedElements.forms.length > 0
+                ? `FORMS:\n${extractedElements.forms.join('\n\n')}`
+                : '',
+            extractedElements.buttons.length > 0
+                ? `BUTTONS:\n${extractedElements.buttons.join('\n\n')}`
+                : '',
+            extractedElements.links.length > 0
+                ? `UNSUBSCRIBE-RELATED LINKS:\n${extractedElements.links.join(
+                      '\n'
+                  )}`
+                : '',
+            extractedElements.relevantSections.length > 0
+                ? `RELEVANT SECTIONS (footer, etc):\n${extractedElements.relevantSections.join(
+                      '\n\n'
+                  )}`
+                : '',
+        ]
+            .filter(Boolean)
+            .join('\n\n---\n\n');
 
-        const prompt = `Analyze this HTML page for unsubscribe functionality. Return a JSON object with:
+        // Use extracted content if available, otherwise fall back to truncated full page
+        const hasExtractedContent = extractedContent.trim().length > 100;
+        const contentToAnalyze = hasExtractedContent
+            ? extractedContent.slice(0, 20000)
+            : fullPageContent.slice(0, 15000);
+
+        const prompt = hasExtractedContent
+            ? `Analyze these extracted elements from an unsubscribe page. Return a JSON object with:
+- hasUnsubscribeButton: boolean - is there a button/link to unsubscribe
+- buttonSelector: string - CSS selector for the unsubscribe button (best guess based on context, e.g., "button:has-text('Unsubscribe')" or "#unsubscribe-btn")
+- hasForm: boolean - is there a form to fill
+- formFields: string[] - list of form field names/ids if form exists
+- requiresEmail: boolean - does the form require email input
+- successIndicators: string[] - text phrases that indicate successful unsubscribe
+- nextAction: "click_button" | "fill_form" | "already_done" | "unknown"
+
+Extracted page elements:
+${contentToAnalyze}
+
+Respond with ONLY valid JSON, no markdown.`
+            : `Analyze this HTML page for unsubscribe functionality. Return a JSON object with:
 - hasUnsubscribeButton: boolean - is there a button/link to unsubscribe
 - buttonSelector: string - CSS selector for the unsubscribe button (if any)
 - hasForm: boolean - is there a form to fill
@@ -89,7 +142,7 @@ export class UnsubscribeAgent {
 - nextAction: "click_button" | "fill_form" | "already_done" | "unknown"
 
 HTML content:
-${truncatedContent}
+${contentToAnalyze}
 
 Respond with ONLY valid JSON, no markdown.`;
 
@@ -217,6 +270,7 @@ Respond with ONLY valid JSON, no markdown.`;
                     clicked = await this.browser.findAndClickButton([selector]);
                     if (clicked) break;
                 }
+                console.log('Clicked unsubscribe button by selector:', clicked);
 
                 // If no selector worked, try by text
                 if (!clicked) {
@@ -224,6 +278,7 @@ Respond with ONLY valid JSON, no markdown.`;
                         buttonTexts
                     );
                 }
+                console.log('Clicked unsubscribe button by text:', clicked);
 
                 if (clicked) {
                     await this.browser.waitForNavigation(3000);

@@ -194,6 +194,149 @@ export class BrowserController {
         return this.page.url();
     }
 
+    /**
+     * Extract relevant unsubscribe-related elements from the page
+     * This ensures we capture forms, buttons, and links that may be in the footer
+     * regardless of their position in the HTML
+     */
+    async extractUnsubscribeElements(): Promise<{
+        forms: string[];
+        buttons: string[];
+        links: string[];
+        relevantSections: string[];
+    }> {
+        if (!this.page) throw new Error('Browser not launched');
+
+        return this.page.evaluate(() => {
+            const results = {
+                forms: [] as string[],
+                buttons: [] as string[],
+                links: [] as string[],
+                relevantSections: [] as string[],
+            };
+
+            const unsubscribeKeywords = [
+                'unsubscribe',
+                'opt-out',
+                'optout',
+                'opt out',
+                'remove',
+                'preference',
+                'manage',
+                'subscription',
+                'email settings',
+                'stop receiving',
+                'confirm',
+                'submit',
+            ];
+
+            const matchesKeyword = (text: string): boolean => {
+                const lowerText = text.toLowerCase();
+                return unsubscribeKeywords.some((kw) => lowerText.includes(kw));
+            };
+
+            const getElementContext = (el: Element): string => {
+                // Get element with its parent context for better selector generation
+                const parent = el.parentElement;
+                if (parent) {
+                    const clone = parent.cloneNode(true) as Element;
+                    // Remove script and style tags
+                    clone
+                        .querySelectorAll('script, style, noscript')
+                        .forEach((s) => s.remove());
+                    return clone.outerHTML.slice(0, 2000);
+                }
+                return el.outerHTML.slice(0, 1000);
+            };
+
+            // Extract all forms
+            document.querySelectorAll('form').forEach((form) => {
+                const formHtml = form.outerHTML;
+                if (
+                    matchesKeyword(formHtml) ||
+                    form.querySelectorAll('input, button, select').length > 0
+                ) {
+                    // Simplified form representation
+                    const inputs = Array.from(
+                        form.querySelectorAll('input, select, textarea')
+                    ).map((input) => {
+                        const el = input as HTMLInputElement;
+                        return `<input type="${el.type || 'text'}" name="${
+                            el.name || ''
+                        }" id="${el.id || ''}" placeholder="${
+                            el.placeholder || ''
+                        }" />`;
+                    });
+                    const buttons = Array.from(
+                        form.querySelectorAll('button, input[type="submit"]')
+                    ).map((btn) => {
+                        return `<button>${
+                            btn.textContent?.trim() || ''
+                        }</button>`;
+                    });
+                    results.forms.push(
+                        `<form action="${form.action || ''}" method="${
+                            form.method || ''
+                        }">\n${inputs.join('\n')}\n${buttons.join(
+                            '\n'
+                        )}\n</form>`
+                    );
+                }
+            });
+
+            // Extract all buttons (including those outside forms)
+            document
+                .querySelectorAll(
+                    'button, input[type="submit"], input[type="button"], [role="button"]'
+                )
+                .forEach((btn) => {
+                    const text = btn.textContent?.trim() || '';
+                    const el = btn as HTMLElement;
+                    if (
+                        matchesKeyword(text) ||
+                        matchesKeyword(el.className) ||
+                        matchesKeyword(el.id)
+                    ) {
+                        results.buttons.push(getElementContext(btn));
+                    }
+                });
+
+            // Extract relevant links
+            document.querySelectorAll('a[href]').forEach((link) => {
+                const anchor = link as HTMLAnchorElement;
+                const text = anchor.textContent?.trim() || '';
+                const href = anchor.href || '';
+                if (
+                    matchesKeyword(text) ||
+                    matchesKeyword(href) ||
+                    matchesKeyword(anchor.className)
+                ) {
+                    results.links.push(
+                        `<a href="${href}" class="${anchor.className}">${text}</a>`
+                    );
+                }
+            });
+
+            // Look for sections that might contain unsubscribe content
+            document
+                .querySelectorAll(
+                    'footer, [class*="footer"], [id*="footer"], [class*="unsubscribe"], [id*="unsubscribe"], [class*="preference"], [class*="optout"]'
+                )
+                .forEach((section) => {
+                    const clone = section.cloneNode(true) as Element;
+                    clone
+                        .querySelectorAll('script, style, noscript, img')
+                        .forEach((s) => s.remove());
+                    const html = clone.innerHTML.slice(0, 3000);
+                    if (html.trim()) {
+                        results.relevantSections.push(html);
+                    }
+                });
+
+            return results;
+        });
+    }
+
     getPage(): Page | null {
         return this.page;
     }
