@@ -171,3 +171,20 @@ ${emailList}
 Respond with ONLY a valid JSON array (no markdown, no explanation):
 [{"emailId": "id", "summary": "Concise summary here..."}, ...]`;
 }
+
+/**
+ * Build unsubscribe link extraction prompt
+ */
+export function buildUnsubscribeExtractionPrompt(emailContent: string): string {
+    return `Analyze this email content and extract the unsubscribe URL if one exists.
+
+Rules:
+1. Look for links that allow users to unsubscribe, opt-out, or manage email preferences
+2. Return ONLY the full URL, nothing else
+3. If multiple unsubscribe links exist, return the most prominent one
+4. If no unsubscribe link exists, return exactly "NONE"
+5. Do not include any explanation, just the URL or "NONE"
+
+Email content:
+${emailContent}`;
+}

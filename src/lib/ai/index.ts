@@ -20,3 +20,4 @@ export {
     buildBatchCategorizationPrompt,
     buildBatchSummarizationPrompt,
 } from './prompts';
+export { extractUnsubscribeLinkWithAI } from './unsubscribe-extractor';

@@ -102,7 +102,7 @@ export async function syncEmailsForAccount(
 
         for (const message of messages) {
             try {
-                const emailData = processMessage(message, accountId);
+                const emailData = await processMessage(message, accountId);
                 if (emailData) {
                     emailsToCreate.push(emailData);
                     if (opts.archiveAfterImport && message.id) {
@@ -147,7 +147,10 @@ export async function syncEmailsForAccount(
 export async function syncEmailsForUser(
     userId: string,
     options: SyncOptions = {}
-): Promise<{ results: SyncResult[]; aiStats: { categorized: number; summarized: number } }> {
+): Promise<{
+    results: SyncResult[];
+    aiStats: { categorized: number; summarized: number };
+}> {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const accounts = await prisma.emailAccount.findMany({
         where: { userId, isActive: true },
@@ -169,10 +172,11 @@ export async function syncEmailsForUser(
                 categorized: processingStats.categorized,
                 summarized: processingStats.summarized,
             };
-            
+
             // Add AI processing count to results
             for (const result of results) {
-                result.aiProcessed = processingStats.categorized + processingStats.summarized;
+                result.aiProcessed =
+                    processingStats.categorized + processingStats.summarized;
             }
         } catch (error) {
             console.error('AI processing failed:', error);
@@ -209,10 +213,10 @@ export async function syncAllEmails(
 /**
  * Process a Gmail message into our database format
  */
-function processMessage(
+async function processMessage(
     message: Awaited<ReturnType<typeof getMessages>>[0],
     accountId: string
-): {
+): Promise<{
     accountId: string;
     gmailId: string;
     threadId: string | null;
@@ -226,12 +230,12 @@ function processMessage(
     unsubscribeLink: string | null;
     isRead: boolean;
     receivedAt: Date;
-} | null {
+} | null> {
     if (!message.id) return null;
 
     const headers = extractHeaders(message);
     const { text: textBody, html: htmlBody } = extractBody(message);
-    const unsubscribeLink = extractUnsubscribeLink(headers, htmlBody);
+    const unsubscribeLink = await extractUnsubscribeLink(headers, htmlBody);
 
     // Parse date
     const dateHeader = headers['date'];

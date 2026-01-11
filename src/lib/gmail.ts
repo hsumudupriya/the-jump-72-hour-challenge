@@ -1,6 +1,7 @@
 import { google, gmail_v1 } from 'googleapis';
 import Bottleneck from 'bottleneck';
 import { prisma } from './prisma';
+import { extractUnsubscribeLinkWithAI } from './ai';
 
 // Gmail API rate limits: 250 quota units per user per second
 // Most operations cost 5-100 units, so we'll be conservative
@@ -276,10 +277,10 @@ export function extractBody(message: gmail_v1.Schema$Message): {
 /**
  * Extract unsubscribe link from email headers or body
  */
-export function extractUnsubscribeLink(
+export async function extractUnsubscribeLink(
     headers: Record<string, string>,
     htmlBody: string | null
-): string | null {
+): Promise<string | null> {
     // Check List-Unsubscribe header first (RFC 2369)
     const listUnsubscribe = headers['list-unsubscribe'];
     if (listUnsubscribe) {
@@ -292,11 +293,32 @@ export function extractUnsubscribeLink(
 
     // Fall back to searching for unsubscribe links in HTML body
     if (htmlBody) {
+        /**
+         * Regular expression patterns used to identify unsubscribe links in email content.
+         * These patterns match HTML href attributes containing common unsubscribe-related URLs:
+         * - URLs containing "unsubscribe"
+         * - URLs containing "optout" (opt-out without hyphen)
+         * - URLs containing "opt-out" (opt-out with hyphen)
+         * - URLs containing "remove"
+         *
+         * Each pattern captures the full URL within single or double quotes in an href attribute.
+         * The matching is case-insensitive.
+         */
         const unsubscribePatterns = [
+            // Match URLs containing unsubscribe keywords
             /href=["'](https?:\/\/[^"']*unsubscribe[^"']*)["']/i,
             /href=["'](https?:\/\/[^"']*optout[^"']*)["']/i,
             /href=["'](https?:\/\/[^"']*opt-out[^"']*)["']/i,
             /href=["'](https?:\/\/[^"']*remove[^"']*)["']/i,
+            /href=["'](https?:\/\/[^"']*email[_-]?preference[^"']*)["']/i,
+            /href=["'](https?:\/\/[^"']*manage[_-]?subscription[^"']*)["']/i,
+            // Match links where the link TEXT contains unsubscribe keywords
+            /<a\s+[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>[^<]*unsubscribe[^<]*<\/a>/i,
+            /<a\s+[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>[^<]*opt[\s-]?out[^<]*<\/a>/i,
+            /<a\s+[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>[^<]*stop\s+receiving[^<]*<\/a>/i,
+            /<a\s+[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>[^<]*manage\s+preferences[^<]*<\/a>/i,
+            /<a\s+[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>[^<]*email\s+preferences[^<]*<\/a>/i,
+            /<a\s+[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>[^<]*click\s+here\s+to\s+unsubscribe[^<]*<\/a>/i,
         ];
 
         for (const pattern of unsubscribePatterns) {
@@ -305,6 +327,8 @@ export function extractUnsubscribeLink(
                 return match[1];
             }
         }
+
+        return await extractUnsubscribeLinkWithAI(htmlBody, null);
     }
 
     return null;

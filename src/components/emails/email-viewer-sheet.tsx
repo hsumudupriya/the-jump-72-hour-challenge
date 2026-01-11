@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { format } from 'date-fns';
 import { ExternalLink, Mail, Loader2 } from 'lucide-react';
 import {
@@ -24,6 +24,125 @@ interface FullEmailData extends EmailData {
     body?: string | null;
     bodyHtml?: string | null;
     to?: string[];
+}
+
+// Component to render HTML email content in an isolated iframe
+function IsolatedEmailContent({ html }: { html: string }) {
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const [dimensions, setDimensions] = useState({ height: 400, width: 0 });
+
+    useEffect(() => {
+        const iframe = iframeRef.current;
+        if (!iframe) return;
+
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!doc) return;
+
+        // Write content to iframe with minimal styles - let content flow naturally
+        doc.open();
+        doc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    * {
+                        box-sizing: border-box;
+                    }
+                    body {
+                        margin: 0;
+                        padding: 16px;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                        font-size: 14px;
+                        line-height: 1.6;
+                        color: #374151;
+                        background: transparent;
+                        /* Let content extend naturally - no overflow constraints */
+                    }
+                    a {
+                        color: #2563eb;
+                    }
+                    /* Prevent fixed/absolute positioned elements from breaking layout */
+                    [style*="position: fixed"], [style*="position:fixed"],
+                    [style*="position: absolute"], [style*="position:absolute"] {
+                        position: relative !important;
+                    }
+                </style>
+            </head>
+            <body>${html}</body>
+            </html>
+        `);
+        doc.close();
+
+        // Adjust iframe dimensions after content loads
+        const adjustDimensions = () => {
+            if (doc.body) {
+                const newHeight = Math.max(doc.body.scrollHeight, 200);
+                const newWidth = doc.body.scrollWidth;
+                setDimensions({
+                    height: Math.min(newHeight, 800), // Cap height at 800px
+                    width: newWidth,
+                });
+            }
+        };
+
+        // Wait for images to load before measuring
+        const images = doc.querySelectorAll('img');
+        if (images.length > 0) {
+            let loadedCount = 0;
+            images.forEach((img) => {
+                if (img.complete) {
+                    loadedCount++;
+                } else {
+                    img.onload = () => {
+                        loadedCount++;
+                        if (loadedCount === images.length) {
+                            adjustDimensions();
+                        }
+                    };
+                    img.onerror = () => {
+                        loadedCount++;
+                        if (loadedCount === images.length) {
+                            adjustDimensions();
+                        }
+                    };
+                }
+            });
+            if (loadedCount === images.length) {
+                adjustDimensions();
+            }
+        } else {
+            adjustDimensions();
+        }
+
+        // Also adjust after a short delay for any async rendering
+        const timer = setTimeout(adjustDimensions, 500);
+        return () => clearTimeout(timer);
+    }, [html]);
+
+    // Calculate if content is wider than container
+    const needsHorizontalScroll = dimensions.width > 0;
+
+    return (
+        <div 
+            className="border rounded-lg bg-white overflow-x-auto"
+            style={{ maxWidth: '100%' }}
+        >
+            <iframe
+                ref={iframeRef}
+                title="Email content"
+                className="block bg-white"
+                style={{ 
+                    height: `${dimensions.height}px`, 
+                    minHeight: '200px',
+                    width: needsHorizontalScroll ? `${Math.max(dimensions.width, 100)}px` : '100%',
+                    minWidth: '100%',
+                    border: 'none',
+                }}
+                sandbox="allow-same-origin"
+            />
+        </div>
+    );
 }
 
 export function EmailViewerSheet({ email, onClose }: EmailViewerSheetProps) {
@@ -142,7 +261,7 @@ export function EmailViewerSheet({ email, onClose }: EmailViewerSheetProps) {
                         )}
 
                         {/* Unsubscribe link */}
-                        {email.unsubscribeLink && (
+                        {(fullEmail?.unsubscribeLink || email.unsubscribeLink) && (
                             <>
                                 <Separator />
                                 <div>
@@ -153,7 +272,7 @@ export function EmailViewerSheet({ email, onClose }: EmailViewerSheetProps) {
                                         asChild
                                     >
                                         <a
-                                            href={email.unsubscribeLink}
+                                            href={fullEmail?.unsubscribeLink || email.unsubscribeLink || ''}
                                             target='_blank'
                                             rel='noopener noreferrer'
                                         >
@@ -176,14 +295,9 @@ export function EmailViewerSheet({ email, onClose }: EmailViewerSheetProps) {
                                     <Loader2 className='h-6 w-6 animate-spin text-muted-foreground' />
                                 </div>
                             ) : fullEmail?.bodyHtml ? (
-                                <div
-                                    className='prose prose-sm max-w-none dark:prose-invert border rounded-lg p-4 bg-background overflow-auto'
-                                    dangerouslySetInnerHTML={{
-                                        __html: fullEmail.bodyHtml,
-                                    }}
-                                />
+                                <IsolatedEmailContent html={fullEmail.bodyHtml} />
                             ) : fullEmail?.body ? (
-                                <pre className='text-sm whitespace-pre-wrap font-sans border rounded-lg p-4 bg-muted/30'>
+                                <pre className='text-sm whitespace-pre-wrap font-sans border rounded-lg p-4 bg-muted/30 overflow-x-auto'>
                                     {fullEmail.body}
                                 </pre>
                             ) : (
