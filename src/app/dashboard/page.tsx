@@ -16,7 +16,7 @@ import {
     UncategorizedCard,
 } from '@/components/categories';
 import { SyncEmailsButton } from '@/components/emails';
-import { AddAccountButton } from '@/components/dashboard';
+import { UsageStats, AddAccountButton } from '@/components/dashboard';
 
 export default async function DashboardPage() {
     const session = await auth();
@@ -237,6 +237,9 @@ export default async function DashboardPage() {
                         )}
                     </CardContent>
                 </Card>
+
+                {/* AI Usage Stats Section */}
+                <UsageStats />
             </div>
 
             {/* Debug Info (development only) */}

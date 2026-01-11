@@ -66,8 +66,8 @@ export async function POST(request: Request) {
         // Get user's email for form filling
         const userEmail = session.user.email || undefined;
 
-        // Run the AI agent to unsubscribe
-        const results = await bulkUnsubscribe(urlsToProcess, userEmail);
+        // Run the AI agent to unsubscribe (pass userId for usage tracking)
+        const results = await bulkUnsubscribe(urlsToProcess, userEmail, session.user.id);
 
         // Map results back to email IDs
         const emailResults: Array<{

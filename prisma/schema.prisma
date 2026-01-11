@@ -18,8 +18,27 @@ model User {
   image         String?
   emailAccounts EmailAccount[]
   categories    Category[]
+  aiUsage       AIUsage[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+}
+
+// AIUsage model - tracks AI token usage and costs per user
+model AIUsage {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operation        String   // 'categorization' | 'summarization' | 'unsubscribe_extraction' | 'page_analysis'
+  model            String   // 'gemini-2.5-flash'
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  estimatedCost    Float    // Cost in USD based on current pricing
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 // EmailAccount model - connected Gmail accounts

@@ -1,5 +1,6 @@
 import { BrowserController } from './browser-controller';
 import { genai } from '@/lib/ai/gemini-client';
+import { trackAIUsage, extractUsageFromStream, AIStreamChunk } from '@/lib/ai/usage-tracker';
 
 export interface UnsubscribeResult {
     url: string;
@@ -34,9 +35,11 @@ interface UnsubscribeResultAnalysis {
  */
 export class UnsubscribeAgent {
     private browser: BrowserController;
+    private userId?: string;
 
-    constructor() {
+    constructor(userId?: string) {
         this.browser = new BrowserController({ headless: true });
+        this.userId = userId;
     }
 
     async unsubscribe(url: string, email?: string): Promise<UnsubscribeResult> {
@@ -170,10 +173,18 @@ Respond with ONLY valid JSON, no markdown.`;
                 },
             });
 
-            let text = '';
+            const chunks: AIStreamChunk[] = [];
             for await (const chunk of response) {
-                text += chunk.text || '';
+                chunks.push(chunk);
             }
+
+            // Track AI usage if userId provided
+            if (this.userId) {
+                const usageMetadata = extractUsageFromStream(chunks);
+                await trackAIUsage(this.userId, 'page_analysis', usageMetadata, 'gemini-2.5-flash');
+            }
+
+            const text = chunks.map(c => c.text || '').join('');
 
             // Clean up the response
             const cleanedText = text
@@ -412,11 +423,18 @@ Respond with ONLY valid JSON, no markdown.`;
                 },
             });
 
-            let text = '';
+            const chunks: AIStreamChunk[] = [];
             for await (const chunk of response) {
-                text += chunk.text || '';
+                chunks.push(chunk);
             }
 
+            // Track AI usage if userId provided
+            if (this.userId) {
+                const usageMetadata = extractUsageFromStream(chunks);
+                await trackAIUsage(this.userId, 'result_analysis', usageMetadata, 'gemini-2.5-flash');
+            }
+
+            const text = chunks.map(c => c.text || '').join('');
             const cleanedText = text
                 .replace(/```json\n?/g, '')
                 .replace(/```\n?/g, '')
@@ -545,9 +563,10 @@ Respond with ONLY valid JSON, no markdown.`;
  */
 export async function unsubscribeFromUrl(
     url: string,
-    email?: string
+    email?: string,
+    userId?: string
 ): Promise<UnsubscribeResult> {
-    const agent = new UnsubscribeAgent();
+    const agent = new UnsubscribeAgent(userId);
     return agent.unsubscribe(url, email);
 }
 
@@ -556,13 +575,14 @@ export async function unsubscribeFromUrl(
  */
 export async function bulkUnsubscribe(
     urls: string[],
-    email?: string
+    email?: string,
+    userId?: string
 ): Promise<UnsubscribeResult[]> {
     const results: UnsubscribeResult[] = [];
 
     // Process one at a time to avoid overwhelming resources
     for (const url of urls) {
-        const result = await unsubscribeFromUrl(url, email);
+        const result = await unsubscribeFromUrl(url, email, userId);
         results.push(result);
 
         // Small delay between requests

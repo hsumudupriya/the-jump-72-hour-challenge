@@ -7,13 +7,15 @@
 
 import { genai, GEMINI_MODEL, isGeminiConfigured } from './gemini-client';
 import { buildUnsubscribeExtractionPrompt } from './prompts';
+import { trackAIUsage } from './usage-tracker';
 
 /**
  * Extract unsubscribe link from email content using AI
  */
 export async function extractUnsubscribeLinkWithAI(
     htmlBody: string | null,
-    textBody: string | null
+    textBody: string | null,
+    userId?: string
 ): Promise<string | null> {
     if (!isGeminiConfigured()) {
         console.warn(
@@ -32,12 +34,13 @@ export async function extractUnsubscribeLinkWithAI(
     const truncatedContentFromEnd = content.slice(-15000);
 
     try {
-        let result = await requestUnsubscribeExtractionAI(truncatedContent);
+        let result = await requestUnsubscribeExtractionAI(truncatedContent, userId);
         console.log('AI unsubscribe extraction result:', result);
 
         if (!result || result === 'NONE' || result.toLowerCase() === 'none') {
             result = await requestUnsubscribeExtractionAI(
-                truncatedContentFromEnd
+                truncatedContentFromEnd,
+                userId
             );
             console.log('AI unsubscribe extraction result from end:', result);
 
@@ -66,7 +69,8 @@ export async function extractUnsubscribeLinkWithAI(
  * Function to request the AI to extract unsubscribe link
  */
 async function requestUnsubscribeExtractionAI(
-    content: string
+    content: string,
+    userId?: string
 ): Promise<string | null> {
     const prompt = buildUnsubscribeExtractionPrompt(content);
 
@@ -86,6 +90,11 @@ async function requestUnsubscribeExtractionAI(
             },
         },
     });
+
+    // Track AI usage if userId provided
+    if (userId && response.usageMetadata) {
+        await trackAIUsage(userId, 'unsubscribe_extraction', response.usageMetadata, GEMINI_MODEL);
+    }
 
     return response.text?.trim() || null;
 }

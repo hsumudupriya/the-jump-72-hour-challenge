@@ -97,7 +97,7 @@ export async function processEmailsForUser(
 
                 // Summarize if needed
                 if (!email.summary) {
-                    const summary = await summarizeEmail(email);
+                    const summary = await summarizeEmail(email, userId);
                     if (summary) {
                         updates.summary = summary;
                         stats.summarized++;
@@ -106,7 +106,7 @@ export async function processEmailsForUser(
 
                 // Categorize if needed and categories exist
                 if (!email.categoryId && categories.length > 0) {
-                    const result = await categorizeEmail(email, categories);
+                    const result = await categorizeEmail(email, categories, userId);
                     if (result.categoryId && result.confidence >= 0.5) {
                         updates.categoryId = result.categoryId;
                         updates.aiConfidence = result.confidence;
@@ -229,7 +229,7 @@ export async function recategorizeEmails(
 
         for (const email of emails) {
             try {
-                const result = await categorizeEmail(email, categories);
+                const result = await categorizeEmail(email, categories, userId);
                 if (result.categoryId) {
                     await prisma.email.update({
                         where: { id: email.id },

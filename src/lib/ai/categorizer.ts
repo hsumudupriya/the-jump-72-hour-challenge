@@ -7,6 +7,7 @@
 
 import { genai, GEMINI_MODEL, isGeminiConfigured } from './gemini-client';
 import { buildCategorizationPrompt } from './prompts';
+import { trackAIUsage, extractUsageFromStream, AIStreamChunk } from './usage-tracker';
 import type { CategoryModel, EmailModel } from '@/generated/prisma/models';
 
 export interface CategorizationResult {
@@ -19,7 +20,8 @@ export interface CategorizationResult {
  */
 export async function categorizeEmail(
     email: Pick<EmailModel, 'subject' | 'from' | 'body' | 'snippet'>,
-    categories: Pick<CategoryModel, 'id' | 'name' | 'description'>[]
+    categories: Pick<CategoryModel, 'id' | 'name' | 'description'>[],
+    userId?: string
 ): Promise<CategorizationResult> {
     if (!isGeminiConfigured()) {
         console.warn('Gemini not configured, skipping categorization');
@@ -50,14 +52,18 @@ export async function categorizeEmail(
         });
 
         // Collect all chunks to get the complete response
-        const chunks: string[] = [];
+        const chunks: AIStreamChunk[] = [];
         for await (const chunk of responseStream) {
-            if (chunk.text) {
-                chunks.push(chunk.text);
-            }
+            chunks.push(chunk);
         }
 
-        const text = chunks.join('').trim();
+        // Track AI usage if userId provided
+        if (userId) {
+            const usageMetadata = extractUsageFromStream(chunks);
+            await trackAIUsage(userId, 'categorization', usageMetadata, GEMINI_MODEL);
+        }
+
+        const text = chunks.map(c => c.text || '').join('').trim();
         console.log(
             `Categorization AI response (Email: ${email.subject}):`,
             text

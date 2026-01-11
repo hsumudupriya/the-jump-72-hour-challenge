@@ -7,6 +7,7 @@
 
 import { genai, GEMINI_MODEL, isGeminiConfigured } from './gemini-client';
 import { buildSummarizationPrompt } from './prompts';
+import { trackAIUsage, extractUsageFromStream, AIStreamChunk } from './usage-tracker';
 import type { EmailModel } from '@/generated/prisma/models';
 
 const MAX_SUMMARY_LENGTH = 280;
@@ -15,7 +16,8 @@ const MAX_SUMMARY_LENGTH = 280;
  * Summarize a single email
  */
 export async function summarizeEmail(
-    email: Pick<EmailModel, 'subject' | 'from' | 'body' | 'snippet'>
+    email: Pick<EmailModel, 'subject' | 'from' | 'body' | 'snippet'>,
+    userId?: string
 ): Promise<string | null> {
     if (!isGeminiConfigured()) {
         console.warn('Gemini not configured, skipping summarization');
@@ -47,14 +49,18 @@ export async function summarizeEmail(
         });
 
         // Collect all chunks to get the complete response
-        const chunks: string[] = [];
+        const chunks: AIStreamChunk[] = [];
         for await (const chunk of responseStream) {
-            if (chunk.text) {
-                chunks.push(chunk.text);
-            }
+            chunks.push(chunk);
         }
 
-        let text = chunks.join('').trim();
+        // Track AI usage if userId provided
+        if (userId) {
+            const usageMetadata = extractUsageFromStream(chunks);
+            await trackAIUsage(userId, 'summarization', usageMetadata, GEMINI_MODEL);
+        }
+
+        let text = chunks.map(c => c.text || '').join('').trim();
         console.log(
             `Summarization AI response (Email: ${email.subject}):`,
             text
