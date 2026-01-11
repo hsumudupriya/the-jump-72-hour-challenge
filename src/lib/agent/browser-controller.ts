@@ -239,87 +239,68 @@ export class BrowserController {
     }
 
     /**
-     * Extract relevant unsubscribe-related elements from the page
-     * This ensures we capture forms, buttons, and links that may be in the footer
-     * regardless of their position in the HTML
+     * Keywords used to identify unsubscribe-related elements
      */
-    async extractUnsubscribeElements(): Promise<{
-        forms: string[];
-        buttons: string[];
-        links: string[];
-        relevantSections: string[];
-    }> {
+    private static readonly UNSUBSCRIBE_KEYWORDS = [
+        'unsubscribe',
+        'opt-out',
+        'optout',
+        'opt out',
+        'remove',
+        'preference',
+        'manage',
+        'subscription',
+        'email settings',
+        'stop receiving',
+        'confirm',
+        'submit',
+    ];
+
+    /**
+     * Check if text contains any unsubscribe-related keywords
+     */
+    private static matchesKeyword(text: string): boolean {
+        const lowerText = text.toLowerCase();
+        return BrowserController.UNSUBSCRIBE_KEYWORDS.some((kw) =>
+            lowerText.includes(kw)
+        );
+    }
+
+    /**
+     * Get element HTML with parent context for better selector generation
+     */
+    private static getElementContext(el: Element): string {
+        const parent = el.parentElement;
+        if (parent) {
+            const clone = parent.cloneNode(true) as Element;
+            clone
+                .querySelectorAll('script, style, noscript')
+                .forEach((s) => s.remove());
+            return clone.outerHTML.slice(0, 2000);
+        }
+        return el.outerHTML.slice(0, 1000);
+    }
+
+    /**
+     * Extract all forms from the page
+     */
+    private async extractForms(): Promise<string[]> {
         if (!this.page) throw new Error('Browser not launched');
 
-        return this.page.evaluate(() => {
-            const results = {
-                forms: [] as string[],
-                buttons: [] as string[],
-                links: [] as string[],
-                relevantSections: [] as string[],
-            };
-
-            const unsubscribeKeywords = [
-                'unsubscribe',
-                'opt-out',
-                'optout',
-                'opt out',
-                'remove',
-                'preference',
-                'manage',
-                'subscription',
-                'email settings',
-                'stop receiving',
-                'confirm',
-                'submit',
-            ];
-
+        return this.page.evaluate((keywords: string[]) => {
             const matchesKeyword = (text: string): boolean => {
                 const lowerText = text.toLowerCase();
-                return unsubscribeKeywords.some((kw) => lowerText.includes(kw));
+                return keywords.some((kw) => lowerText.includes(kw));
             };
 
-            const getElementContext = (el: Element): string => {
-                // Get element with its parent context for better selector generation
-                const parent = el.parentElement;
-                if (parent) {
-                    const clone = parent.cloneNode(true) as Element;
-                    // Remove script and style tags
-                    clone
-                        .querySelectorAll('script, style, noscript')
-                        .forEach((s) => s.remove());
-                    return clone.outerHTML.slice(0, 2000);
-                }
-                return el.outerHTML.slice(0, 1000);
-            };
+            const forms: string[] = [];
 
-            // Extract all forms
             document.querySelectorAll('form').forEach((form) => {
                 const formHtml = form.outerHTML;
                 if (
                     matchesKeyword(formHtml) ||
                     form.querySelectorAll('input, button, select').length > 0
                 ) {
-                    // Simplified form representation
-                    // const inputs = Array.from(
-                    //     form.querySelectorAll('input, select, textarea')
-                    // )
-                    //     .filter((input) => {
-                    //         const el = input as HTMLElement;
-                    //         return (
-                    //             el.offsetParent !== null &&
-                    //             el.offsetWidth > 0 &&
-                    //             el.offsetHeight > 0
-                    //         );
-                    //     })
-                    //     .map((input) => {
-                    //         const el = input as HTMLInputElement;
-                    //         return `<input type="${el.type || 'text'}" name="${
-                    //             el.name || ''
-                    //         }" id="${el.id || ''}" class="${
-                    //             el.className || ''
-                    //         }" placeholder="${el.placeholder || ''}" />`;
-                    //     });
                     const buttons = Array.from(
                         form.querySelectorAll(
                             'button, input[type="submit"], input[type="button"]'
@@ -357,14 +338,8 @@ export class BrowserController {
                                 }" />`;
                             }
                         });
-                    // results.forms.push(
-                    //     `<form action="${form.action || ''}" method="${
-                    //         form.method || ''
-                    //     }">\n${inputs.join('\n')}\n${buttons.join(
-                    //         '\n'
-                    //     )}\n</form>`
-                    // );
-                    results.forms.push(
+
+                    forms.push(
                         `<form action="${form.action || ''}" method="${
                             form.method || ''
                         }">\n${buttons.join('\n')}\n</form>`
@@ -372,7 +347,36 @@ export class BrowserController {
                 }
             });
 
-            // Extract all buttons (including those outside forms)
+            return forms;
+        }, BrowserController.UNSUBSCRIBE_KEYWORDS);
+    }
+
+    /**
+     * Extract all unsubscribe-related buttons from the page
+     */
+    private async extractButtons(): Promise<string[]> {
+        if (!this.page) throw new Error('Browser not launched');
+
+        return this.page.evaluate((keywords: string[]) => {
+            const matchesKeyword = (text: string): boolean => {
+                const lowerText = text.toLowerCase();
+                return keywords.some((kw) => lowerText.includes(kw));
+            };
+
+            const getElementContext = (el: Element): string => {
+                const parent = el.parentElement;
+                if (parent) {
+                    const clone = parent.cloneNode(true) as Element;
+                    clone
+                        .querySelectorAll('script, style, noscript')
+                        .forEach((s) => s.remove());
+                    return clone.outerHTML.slice(0, 2000);
+                }
+                return el.outerHTML.slice(0, 1000);
+            };
+
+            const buttons: string[] = [];
+
             document
                 .querySelectorAll(
                     'button, input[type="submit"], input[type="button"], [role="button"]'
@@ -386,11 +390,28 @@ export class BrowserController {
                         matchesKeyword(el.id) ||
                         matchesKeyword(el.getAttribute('value') || '')
                     ) {
-                        results.buttons.push(getElementContext(btn));
+                        buttons.push(getElementContext(btn));
                     }
                 });
 
-            // Extract relevant links
+            return buttons;
+        }, BrowserController.UNSUBSCRIBE_KEYWORDS);
+    }
+
+    /**
+     * Extract all unsubscribe-related links from the page
+     */
+    private async extractLinks(): Promise<string[]> {
+        if (!this.page) throw new Error('Browser not launched');
+
+        return this.page.evaluate((keywords: string[]) => {
+            const matchesKeyword = (text: string): boolean => {
+                const lowerText = text.toLowerCase();
+                return keywords.some((kw) => lowerText.includes(kw));
+            };
+
+            const links: string[] = [];
+
             document.querySelectorAll('a[href]').forEach((link) => {
                 const anchor = link as HTMLAnchorElement;
                 const text = anchor.textContent?.trim() || '';
@@ -400,13 +421,25 @@ export class BrowserController {
                     matchesKeyword(href) ||
                     matchesKeyword(anchor.className)
                 ) {
-                    results.links.push(
+                    links.push(
                         `<a href="${href}" class="${anchor.className}">${text}</a>`
                     );
                 }
             });
 
-            // Look for sections that might contain unsubscribe content
+            return links;
+        }, BrowserController.UNSUBSCRIBE_KEYWORDS);
+    }
+
+    /**
+     * Extract relevant sections (footer, unsubscribe areas) from the page
+     */
+    private async extractRelevantSections(): Promise<string[]> {
+        if (!this.page) throw new Error('Browser not launched');
+
+        return this.page.evaluate(() => {
+            const sections: string[] = [];
+
             document
                 .querySelectorAll(
                     'footer, [class*="footer"], [id*="footer"], [class*="unsubscribe"], [id*="unsubscribe"], [class*="preference"], [class*="optout"]'
@@ -418,12 +451,35 @@ export class BrowserController {
                         .forEach((s) => s.remove());
                     const html = clone.outerHTML.slice(0, 3000);
                     if (html.trim()) {
-                        results.relevantSections.push(html);
+                        sections.push(html);
                     }
                 });
 
-            return results;
+            return sections;
         });
+    }
+
+    /**
+     * Extract relevant unsubscribe-related elements from the page
+     * This ensures we capture forms, buttons, and links that may be in the footer
+     * regardless of their position in the HTML
+     */
+    async extractUnsubscribeElements(): Promise<{
+        forms: string[];
+        buttons: string[];
+        links: string[];
+        relevantSections: string[];
+    }> {
+        if (!this.page) throw new Error('Browser not launched');
+
+        const [forms, buttons, links, relevantSections] = await Promise.all([
+            this.extractForms(),
+            this.extractButtons(),
+            this.extractLinks(),
+            this.extractRelevantSections(),
+        ]);
+
+        return { forms, buttons, links, relevantSections };
     }
 
     getPage(): Page | null {

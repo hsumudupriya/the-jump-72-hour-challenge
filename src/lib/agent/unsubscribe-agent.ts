@@ -213,7 +213,87 @@ Respond with ONLY valid JSON, no markdown.`;
         analysis: PageAnalysis,
         email?: string
     ): Promise<{ success: boolean; message: string }> {
-        // Common unsubscribe button texts and selectors
+        switch (analysis.nextAction) {
+            case 'already_done':
+                return {
+                    success: true,
+                    message: 'Already unsubscribed',
+                };
+
+            case 'fill_form':
+                return this.performFillFormAction(analysis, email);
+
+            case 'click_button':
+                return this.performClickButtonAction(analysis);
+
+            default:
+                return this.performFallbackAction();
+        }
+    }
+
+    /**
+     * Handle form-based unsubscription
+     */
+    private async performFillFormAction(
+        analysis: PageAnalysis,
+        email?: string
+    ): Promise<{ success: boolean; message: string }> {
+        const buttonTexts = [
+            'unsubscribe',
+            'confirm',
+            'yes',
+            'opt out',
+            'remove',
+            'submit',
+        ];
+
+        if (analysis.requiresEmail && email) {
+            await this.browser.fillForm({ email });
+        }
+
+        // Check any checkboxes that might be required
+        await this.browser.checkCheckbox([
+            'input[type="checkbox"]',
+            '[name*="unsubscribe"]',
+            '[name*="optout"]',
+        ]);
+
+        // Try to submit
+        const formSubmitted = await this.browser.findAndClickByText(
+            buttonTexts,
+            ['button', 'input[type="submit"]']
+        );
+
+        if (formSubmitted) {
+            // Wait for page to update
+            await this.browser.waitForNavigation(3000);
+            const pageContent = await this.browser.getPageContent();
+
+            // Check for success indicators
+            const isSuccess = analysis.successIndicators.some((indicator) =>
+                pageContent.toLowerCase().includes(indicator.toLowerCase())
+            );
+
+            return {
+                success: isSuccess,
+                message: isSuccess
+                    ? 'Successfully unsubscribed'
+                    : 'Form submitted, but success could not be verified',
+            };
+        }
+
+        return {
+            success: false,
+            message: 'Could not submit unsubscribe form',
+        };
+    }
+
+    /**
+     * Handle button-based unsubscription
+     */
+    private async performClickButtonAction(
+        analysis: PageAnalysis
+    ): Promise<{ success: boolean; message: string }> {
         const buttonTexts = [
             'unsubscribe',
             'confirm',
@@ -234,118 +314,73 @@ Respond with ONLY valid JSON, no markdown.`;
             '[data-action="unsubscribe"]',
         ].filter(Boolean) as string[];
 
-        switch (analysis.nextAction) {
-            case 'already_done':
-                return {
-                    success: true,
-                    message: 'Already unsubscribed',
-                };
+        // Try specific selector first
+        let clicked = false;
 
-            case 'fill_form':
-                if (analysis.requiresEmail && email) {
-                    await this.browser.fillForm({ email });
-                }
-
-                // Check any checkboxes that might be required
-                await this.browser.checkCheckbox([
-                    'input[type="checkbox"]',
-                    '[name*="unsubscribe"]',
-                    '[name*="optout"]',
-                ]);
-
-                // Try to submit
-                const formSubmitted = await this.browser.findAndClickByText(
-                    buttonTexts,
-                    ['button', 'input[type="submit"]']
-                );
-
-                if (formSubmitted) {
-                    // Wait for page to update
-                    await this.browser.waitForNavigation(3000);
-                    const pageContent = await this.browser.getPageContent();
-
-                    // Check for success indicators
-                    const isSuccess = analysis.successIndicators.some(
-                        (indicator) =>
-                            pageContent
-                                .toLowerCase()
-                                .includes(indicator.toLowerCase())
-                    );
-
-                    return {
-                        success: isSuccess,
-                        message: isSuccess
-                            ? 'Successfully unsubscribed'
-                            : 'Form submitted, but success could not be verified',
-                    };
-                }
-
-                return {
-                    success: false,
-                    message: 'Could not submit unsubscribe form',
-                };
-
-            case 'click_button':
-                // Try specific selector first
-                let clicked = false;
-
-                for (const selector of buttonSelectors) {
-                    clicked = await this.browser.findAndClickButton([selector]);
-                    console.log(
-                        'Clicked unsubscribe button by selector: ' + selector,
-                        clicked
-                    );
-                    if (clicked) break;
-                }
-
-                // If no selector worked, try by text
-                if (!clicked) {
-                    clicked = await this.browser.findAndClickByText(
-                        buttonTexts
-                    );
-                    console.log(
-                        'Clicked unsubscribe button by text: ' + buttonTexts,
-                        clicked
-                    );
-                }
-
-                if (clicked) {
-                    await this.browser.waitForNavigation(3000);
-                    const pageContent = await this.browser.getPageContent();
-
-                    const isSuccess = analysis.successIndicators.some(
-                        (indicator) =>
-                            pageContent
-                                .toLowerCase()
-                                .includes(indicator.toLowerCase())
-                    );
-
-                    return {
-                        success: isSuccess,
-                        message: isSuccess
-                            ? 'Successfully unsubscribed'
-                            : 'Button clicked, but success could not be verified',
-                    };
-                }
-
-                return {
-                    success: false,
-                    message: 'Could not find unsubscribe button',
-                };
-
-            default:
-                // Try common approaches
-                const attemptClick = await this.browser.findAndClickByText(
-                    buttonTexts
-                );
-
-                return {
-                    success: attemptClick,
-                    message: attemptClick
-                        ? 'Attempted to unsubscribe'
-                        : 'Could not determine how to unsubscribe',
-                };
+        for (const selector of buttonSelectors) {
+            clicked = await this.browser.findAndClickButton([selector]);
+            console.log(
+                'Clicked unsubscribe button by selector: ' + selector,
+                clicked
+            );
+            if (clicked) break;
         }
+
+        // If no selector worked, try by text
+        if (!clicked) {
+            clicked = await this.browser.findAndClickByText(buttonTexts);
+            console.log(
+                'Clicked unsubscribe button by text: ' + buttonTexts,
+                clicked
+            );
+        }
+
+        if (clicked) {
+            await this.browser.waitForNavigation(3000);
+            const pageContent = await this.browser.getPageContent();
+
+            const isSuccess = analysis.successIndicators.some((indicator) =>
+                pageContent.toLowerCase().includes(indicator.toLowerCase())
+            );
+
+            return {
+                success: isSuccess,
+                message: isSuccess
+                    ? 'Successfully unsubscribed'
+                    : 'Button clicked, but success could not be verified',
+            };
+        }
+
+        return {
+            success: false,
+            message: 'Could not find unsubscribe button',
+        };
+    }
+
+    /**
+     * Handle unknown page structures with fallback approach
+     */
+    private async performFallbackAction(): Promise<{
+        success: boolean;
+        message: string;
+    }> {
+        const buttonTexts = [
+            'unsubscribe',
+            'confirm',
+            'yes',
+            'opt out',
+            'remove',
+            'submit',
+        ];
+
+        const attemptClick = await this.browser.findAndClickByText(buttonTexts);
+
+        return {
+            success: attemptClick,
+            message: attemptClick
+                ? 'Attempted to unsubscribe'
+                : 'Could not determine how to unsubscribe',
+        };
     }
 }
 
