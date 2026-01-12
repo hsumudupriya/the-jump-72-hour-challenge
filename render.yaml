@@ -30,5 +30,5 @@ services:
 databases:
     - name: email-sorter-db
       region: oregon
-      plan: basic
+      plan: free
       ipAllowList: []
