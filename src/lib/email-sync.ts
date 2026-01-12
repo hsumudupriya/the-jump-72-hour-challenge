@@ -62,6 +62,13 @@ export async function syncEmailsForAccount(
         }
         result.email = client.email;
 
+        // Get userId from account for AI usage tracking
+        const account = await prisma.emailAccount.findUnique({
+            where: { id: accountId },
+            select: { userId: true },
+        });
+        const userId = account?.userId;
+
         // List messages from inbox
         const messageList = await listMessages(client, {
             maxResults: opts.maxEmails,
@@ -102,7 +109,7 @@ export async function syncEmailsForAccount(
 
         for (const message of messages) {
             try {
-                const emailData = await processMessage(message, accountId);
+                const emailData = await processMessage(message, accountId, userId);
                 if (emailData) {
                     emailsToCreate.push(emailData);
                     if (opts.archiveAfterImport && message.id) {
@@ -215,7 +222,8 @@ export async function syncAllEmails(
  */
 async function processMessage(
     message: Awaited<ReturnType<typeof getMessages>>[0],
-    accountId: string
+    accountId: string,
+    userId?: string
 ): Promise<{
     accountId: string;
     gmailId: string;
@@ -235,7 +243,7 @@ async function processMessage(
 
     const headers = extractHeaders(message);
     const { text: textBody, html: htmlBody } = extractBody(message);
-    const unsubscribeLink = await extractUnsubscribeLink(headers, htmlBody);
+    const unsubscribeLink = await extractUnsubscribeLink(headers, htmlBody, userId);
 
     // Parse date
     const dateHeader = headers['date'];

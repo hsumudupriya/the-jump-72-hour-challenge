@@ -279,7 +279,8 @@ export function extractBody(message: gmail_v1.Schema$Message): {
  */
 export async function extractUnsubscribeLink(
     headers: Record<string, string>,
-    htmlBody: string | null
+    htmlBody: string | null,
+    userId?: string
 ): Promise<string | null> {
     // Check List-Unsubscribe header first (RFC 2369)
     const listUnsubscribe = headers['list-unsubscribe'];
@@ -328,7 +329,7 @@ export async function extractUnsubscribeLink(
             }
         }
 
-        return await extractUnsubscribeLinkWithAI(htmlBody, null);
+        return await extractUnsubscribeLinkWithAI(htmlBody, null, userId);
     }
 
     return null;
