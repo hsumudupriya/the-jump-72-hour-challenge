@@ -16,11 +16,9 @@ projects:
             services:
                 - type: web
                   name: ai-email-sorter
-                  runtime: node
+                  runtime: docker
                   region: virginia
-                  plan: starter
-                  buildCommand: NODE_ENV=development npm ci && npx prisma generate && npx prisma db push && npm run build && npx playwright install chromium
-                  startCommand: npm start
+                  plan: free
                   healthCheckPath: /
                   envVars:
                       - key: NODE_ENV
