@@ -32,8 +32,9 @@ EXPOSE 3000
 # Set environment to production
 ENV NODE_ENV=production
 
-# Create startup script that runs migrations then starts the app
-RUN echo '#!/bin/sh\n# Auto-set AUTH_URL from RENDER_EXTERNAL_URL if not provided\nif [ -z "$AUTH_URL" ] && [ -n "$RENDER_EXTERNAL_URL" ]; then\n  export AUTH_URL="https://$RENDER_EXTERNAL_URL"\nfi\nnpx prisma db push --skip-generate\nnpm start' > /app/start.sh && chmod +x /app/start.sh
+# Copy and set up startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 # Start the application with migrations
 CMD ["/app/start.sh"]
