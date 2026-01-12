@@ -1,0 +1,10 @@
+{
+  "overrides": [
+    {
+      "files": "*.json, .prettierrc",
+      "options": {
+        "tabWidth": 2
+      }
+    }
+  ]
+}
