@@ -24,9 +24,9 @@ export interface ProcessingStats {
  */
 export async function processEmailsForUser(
     userId: string,
-    options: { limit?: number } = {}
+    options: { limit?: number; unprocessedOnly?: boolean } = {}
 ): Promise<ProcessingStats> {
-    const { limit = 50 } = options;
+    const { limit = 50, unprocessedOnly = true } = options;
 
     const stats: ProcessingStats = {
         total: 0,
@@ -59,10 +59,23 @@ export async function processEmailsForUser(
         const emails = await prisma.email.findMany({
             where: {
                 account: { userId },
-                OR: [
-                    { summary: null },
-                    ...(categories.length > 0 ? [{ categoryId: null }] : []),
-                ],
+                ...(unprocessedOnly
+                    ? {
+                          AND: [
+                              { summary: null },
+                              ...(categories.length > 0
+                                  ? [{ categoryId: null }]
+                                  : []),
+                          ],
+                      }
+                    : {
+                          OR: [
+                              { summary: null },
+                              ...(categories.length > 0
+                                  ? [{ categoryId: null }]
+                                  : []),
+                          ],
+                      }),
             },
             select: {
                 id: true,
@@ -106,7 +119,11 @@ export async function processEmailsForUser(
 
                 // Categorize if needed and categories exist
                 if (!email.categoryId && categories.length > 0) {
-                    const result = await categorizeEmail(email, categories, userId);
+                    const result = await categorizeEmail(
+                        email,
+                        categories,
+                        userId
+                    );
                     if (result.categoryId && result.confidence >= 0.5) {
                         updates.categoryId = result.categoryId;
                         updates.aiConfidence = result.confidence;
@@ -146,9 +163,9 @@ export async function processEmailsForUser(
  * Process emails for all users (for cron job)
  */
 export async function processAllEmails(
-    options: { limitPerUser?: number } = {}
+    options: { limitPerUser?: number; unprocessedOnly?: boolean } = {}
 ): Promise<Map<string, ProcessingStats>> {
-    const { limitPerUser = 20 } = options;
+    const { limitPerUser = 20, unprocessedOnly = true } = options;
     const results = new Map<string, ProcessingStats>();
 
     if (!isGeminiConfigured()) {
@@ -171,6 +188,7 @@ export async function processAllEmails(
             try {
                 const stats = await processEmailsForUser(user.id, {
                     limit: limitPerUser,
+                    unprocessedOnly,
                 });
                 results.set(user.id, stats);
             } catch (error) {

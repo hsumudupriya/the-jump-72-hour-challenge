@@ -109,7 +109,11 @@ export async function syncEmailsForAccount(
 
         for (const message of messages) {
             try {
-                const emailData = await processMessage(message, accountId, userId);
+                const emailData = await processMessage(
+                    message,
+                    accountId,
+                    userId
+                );
                 if (emailData) {
                     emailsToCreate.push(emailData);
                     if (opts.archiveAfterImport && message.id) {
@@ -174,6 +178,7 @@ export async function syncEmailsForUser(
         try {
             const processingStats = await processEmailsForUser(userId, {
                 limit: opts.maxEmails,
+                unprocessedOnly: false,
             });
             aiStats = {
                 categorized: processingStats.categorized,
@@ -243,7 +248,11 @@ async function processMessage(
 
     const headers = extractHeaders(message);
     const { text: textBody, html: htmlBody } = extractBody(message);
-    const unsubscribeLink = await extractUnsubscribeLink(headers, htmlBody, userId);
+    const unsubscribeLink = await extractUnsubscribeLink(
+        headers,
+        htmlBody,
+        userId
+    );
 
     // Parse date
     const dateHeader = headers['date'];
