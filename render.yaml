@@ -4,7 +4,7 @@ services:
       runtime: node
       region: oregon
       plan: starter
-      buildCommand: npm ci && npm run build && npx playwright install chromium --with-deps
+      buildCommand: npm ci && npx prisma generate && npx prisma db push && npm run build && npx playwright install chromium --with-deps
       startCommand: npm start
       healthCheckPath: /
       envVars:
