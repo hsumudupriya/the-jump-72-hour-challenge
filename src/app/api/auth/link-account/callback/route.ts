@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getAppUrl } from '@/lib/url';
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
 
     try {
         // Exchange authorization code for tokens
+        const appUrl = getAppUrl();
         const tokenResponse = await fetch(
             'https://oauth2.googleapis.com/token',
             {
@@ -45,7 +47,7 @@ export async function GET(request: NextRequest) {
                     client_secret: process.env.GOOGLE_CLIENT_SECRET!,
                     code,
                     grant_type: 'authorization_code',
-                    redirect_uri: `${process.env.AUTH_URL}/api/auth/link-account/callback`,
+                    redirect_uri: `${appUrl}/api/auth/link-account/callback`,
                 }),
             }
         );
