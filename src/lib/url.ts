@@ -6,7 +6,9 @@
 export function getAppUrl(): string {
     return (
         process.env.AUTH_URL ||
-        process.env.RENDER_EXTERNAL_URL ||
+        (process.env.RENDER_EXTERNAL_URL
+            ? `https://${process.env.RENDER_EXTERNAL_URL}`
+            : null) ||
         'http://localhost:3000'
     );
 }

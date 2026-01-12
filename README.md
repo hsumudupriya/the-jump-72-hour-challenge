@@ -208,6 +208,8 @@ Visit http://localhost:3000 to access the application.
     - Web service (Docker)
     - PostgreSQL database
 6. After deployment, set the following environment variables in the Render Dashboard:
+    - `AUTH_URL` - Your Render service URL (e.g., `https://ai-email-sorter-xyz.onrender.com`)
+      - **Note:** If not set, will auto-detect from `RENDER_EXTERNAL_URL`
     - `GOOGLE_CLIENT_ID` - From Google Cloud Console
     - `GOOGLE_CLIENT_SECRET` - From Google Cloud Console
     - `GEMINI_API_KEY` - From Google AI Studio
@@ -231,6 +233,7 @@ Visit http://localhost:3000 to access the application.
     - Plan: Starter ($7/month)
 4. Add environment variables:
     - `NODE_ENV`: `production`
+    - `AUTH_URL`: `https://your-service-name.onrender.com` (use your actual Render URL)
     - `AUTH_TRUST_HOST`: `true`
     - `DATABASE_URL`: (paste from PostgreSQL)
     - `AUTH_SECRET`: (generate a random string)
