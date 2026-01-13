@@ -64,18 +64,51 @@ export class BrowserController {
 
     /**
      * Get only the visible text content from the page body
+     * Excludes hidden elements and form elements
      * Useful for analyzing response pages without HTML noise
      */
     async getBodyTextContent(): Promise<string> {
         if (!this.page) throw new Error('Browser not launched');
-        return this.page.evaluate(() => {
-            // Remove script and style elements before getting text
+
+        // First, mark hidden elements in the live DOM where getComputedStyle works
+        await this.page.evaluate(() => {
+            document.querySelectorAll('*').forEach((el) => {
+                const htmlEl = el as HTMLElement;
+                const style = window.getComputedStyle(htmlEl);
+                if (
+                    style.display === 'none' ||
+                    style.visibility === 'hidden' ||
+                    style.opacity === '0' ||
+                    (htmlEl.offsetWidth === 0 && htmlEl.offsetHeight === 0)
+                ) {
+                    // Mark element with a temporary attribute
+                    htmlEl.setAttribute('data-hidden-temp', 'true');
+                }
+            });
+        });
+
+        // Now extract text excluding hidden and form elements
+        const text = await this.page.evaluate(() => {
             const body = document.body.cloneNode(true) as HTMLElement;
-            body.querySelectorAll('script, style, noscript').forEach((el) =>
-                el.remove()
-            );
+
+            // Remove non-visible and non-content elements
+            body.querySelectorAll(
+                'script, style, noscript, label, input, select, textarea, button, [hidden], [data-hidden-temp="true"]'
+            ).forEach((el) => el.remove());
+
             return body.innerText || body.textContent || '';
         });
+
+        // Clean up temporary attributes
+        await this.page.evaluate(() => {
+            document
+                .querySelectorAll('[data-hidden-temp="true"]')
+                .forEach((el) => {
+                    el.removeAttribute('data-hidden-temp');
+                });
+        });
+
+        return text;
     }
 
     async screenshot(): Promise<Buffer> {
@@ -94,14 +127,6 @@ export class BrowserController {
                     const isVisible = await element
                         .isVisible()
                         .catch(() => false);
-                    console.log(
-                        'Trying selector:',
-                        selector,
-                        'Found:',
-                        !!element,
-                        'Visible:',
-                        isVisible
-                    );
 
                     if (!isVisible) {
                         // Try to scroll element into view
@@ -228,6 +253,44 @@ export class BrowserController {
         return false;
     }
 
+    /**
+     * Fill an input field by CSS selector
+     */
+    async fillInput(selector: string, value: string): Promise<boolean> {
+        if (!this.page) throw new Error('Browser not launched');
+
+        try {
+            const element = await this.page.$(selector);
+            if (element) {
+                await element.fill(value);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('Fill input error:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Select an option from a dropdown by CSS selector
+     */
+    async selectOption(selector: string, value: string): Promise<boolean> {
+        if (!this.page) throw new Error('Browser not launched');
+
+        try {
+            const element = await this.page.$(selector);
+            if (element) {
+                await element.selectOption(value);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('Select option error:', error);
+            return false;
+        }
+    }
+
     async selectAll(selector: string): Promise<void> {
         if (!this.page) throw new Error('Browser not launched');
         await this.page.$$eval(selector, (elements) => {
@@ -313,6 +376,13 @@ export class BrowserController {
 
             document.querySelectorAll('form').forEach((form) => {
                 const formHtml = form.outerHTML;
+
+                // Let's push the complete form if it matches keywords
+                if (matchesKeyword(formHtml)) {
+                    forms.push(formHtml);
+                    return;
+                }
+
                 if (
                     matchesKeyword(formHtml) ||
                     form.querySelectorAll('input, button, select').length > 0
@@ -406,7 +476,8 @@ export class BrowserController {
                         matchesKeyword(el.id) ||
                         matchesKeyword(el.getAttribute('value') || '')
                     ) {
-                        buttons.push(getElementContext(btn));
+                        // buttons.push(getElementContext(btn));
+                        buttons.push(btn.outerHTML);
                     }
                 });
 

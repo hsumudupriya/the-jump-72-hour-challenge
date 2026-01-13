@@ -1,6 +1,12 @@
 import { BrowserController } from './browser-controller';
 import { genai } from '@/lib/ai/gemini-client';
-import { trackAIUsage, extractUsageFromStream, AIStreamChunk } from '@/lib/ai/usage-tracker';
+import {
+    trackAIUsage,
+    extractUsageFromStream,
+    AIStreamChunk,
+} from '@/lib/ai/usage-tracker';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface UnsubscribeResult {
     url: string;
@@ -8,6 +14,15 @@ export interface UnsubscribeResult {
     message: string;
     screenshotBeforeBase64?: string;
     screenshotAfterBase64?: string;
+    screenshotBeforePath?: string;
+    screenshotAfterPath?: string;
+}
+
+interface FormFieldToFill {
+    selector: string; // CSS selector for the form element
+    type: 'text' | 'email' | 'checkbox' | 'radio' | 'select' | 'textarea';
+    value: string; // Value to fill (for checkbox/radio: 'check' or 'uncheck')
+    description?: string; // What this field is for
 }
 
 interface PageAnalysis {
@@ -15,6 +30,8 @@ interface PageAnalysis {
     buttonSelector?: string;
     hasForm: boolean;
     formFields?: string[];
+    formFieldsToFill?: FormFieldToFill[]; // Detailed form fields to fill
+    submitButtonSelector?: string; // CSS selector for the form submit button
     requiresEmail: boolean;
     nextAction: 'click_button' | 'fill_form' | 'already_done' | 'unknown';
 }
@@ -56,8 +73,19 @@ export class UnsubscribeAgent {
                 };
             }
 
+            // Generate timestamp and sanitized email for filenames
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const sanitizedEmail = (email || 'unknown').replace(
+                /[^a-zA-Z0-9@.-]/g,
+                '_'
+            );
+
             // Take screenshot before action
             const screenshotBefore = await this.browser.screenshot();
+            const screenshotBeforePath = await this.saveScreenshot(
+                screenshotBefore,
+                `${sanitizedEmail}_${timestamp}_before.png`
+            );
 
             // Extract relevant elements and analyze the page using AI
             const extractedElements =
@@ -76,6 +104,10 @@ export class UnsubscribeAgent {
 
             // Take screenshot after action
             const screenshotAfter = await this.browser.screenshot();
+            const screenshotAfterPath = await this.saveScreenshot(
+                screenshotAfter,
+                `${sanitizedEmail}_${timestamp}_after.png`
+            );
 
             return {
                 url,
@@ -83,6 +115,8 @@ export class UnsubscribeAgent {
                 message: result.message,
                 screenshotBeforeBase64: screenshotBefore.toString('base64'),
                 screenshotAfterBase64: screenshotAfter.toString('base64'),
+                screenshotBeforePath,
+                screenshotAfterPath,
             };
         } catch (error) {
             console.error('Unsubscribe error:', error);
@@ -97,6 +131,25 @@ export class UnsubscribeAgent {
         } finally {
             await this.browser.close();
         }
+    }
+
+    /**
+     * Save screenshot to logs/screenshots folder
+     */
+    private async saveScreenshot(
+        buffer: Buffer,
+        filename: string
+    ): Promise<string> {
+        const screenshotsDir = path.join(process.cwd(), 'logs', 'screenshots');
+
+        // Ensure directory exists
+        await fs.promises.mkdir(screenshotsDir, { recursive: true });
+
+        const filePath = path.join(screenshotsDir, filename);
+        await fs.promises.writeFile(filePath, buffer);
+
+        console.log(`Screenshot saved: ${filePath}`);
+        return filePath;
     }
 
     private async analyzePageWithAI(
@@ -142,8 +195,19 @@ export class UnsubscribeAgent {
 - buttonSelector: string - CSS selector for the unsubscribe button (best guess based on context, e.g., "button:has-text('Unsubscribe')" or "#unsubscribe-btn")
 - hasForm: boolean - is there a form to fill
 - formFields: string[] - list of form field names/ids if form exists
+- formFieldsToFill: array of objects, each with:
+  - selector: string - CSS selector for the form element (e.g., "#email", "input[name='email']", "input[type='checkbox']")
+  - type: "text" | "email" | "checkbox" | "radio" | "select" | "textarea"
+  - value: string - value to fill (use "{{EMAIL}}" as placeholder for user's email, for checkbox/radio use "check" or "uncheck")
+  - description: string - what this field is for
+- submitButtonSelector: string - CSS selector for the form's submit button
 - requiresEmail: boolean - does the form require email input
 - nextAction: "click_button" | "fill_form" | "already_done" | "unknown"
+
+For formFieldsToFill, analyze the form HTML and determine:
+1. Which fields are required or should be filled to unsubscribe
+2. The best CSS selector to target each field
+3. Appropriate values (use "{{EMAIL}}" for email fields, "check" for checkboxes that should be selected)
 
 Extracted page elements:
 ${contentToAnalyze}
@@ -154,6 +218,12 @@ Respond with ONLY valid JSON, no markdown.`
 - buttonSelector: string - CSS selector for the unsubscribe button (if any)
 - hasForm: boolean - is there a form to fill
 - formFields: string[] - list of form field names/ids if form exists
+- formFieldsToFill: array of objects for each field to fill, with:
+  - selector: string - CSS selector for the form element
+  - type: "text" | "email" | "checkbox" | "radio" | "select" | "textarea"
+  - value: string - value to fill (use "{{EMAIL}}" for email, "check"/"uncheck" for checkbox)
+  - description: string - what this field is for
+- submitButtonSelector: string - CSS selector for the form's submit button
 - requiresEmail: boolean - does the form require email input
 - nextAction: "click_button" | "fill_form" | "already_done" | "unknown"
 
@@ -181,10 +251,15 @@ Respond with ONLY valid JSON, no markdown.`;
             // Track AI usage if userId provided
             if (this.userId) {
                 const usageMetadata = extractUsageFromStream(chunks);
-                await trackAIUsage(this.userId, 'page_analysis', usageMetadata, 'gemini-2.5-flash');
+                await trackAIUsage(
+                    this.userId,
+                    'page_analysis',
+                    usageMetadata,
+                    'gemini-2.5-flash'
+                );
             }
 
-            const text = chunks.map(c => c.text || '').join('');
+            const text = chunks.map((c) => c.text || '').join('');
 
             // Clean up the response
             const cleanedText = text
@@ -256,38 +331,120 @@ Respond with ONLY valid JSON, no markdown.`;
         analysis: PageAnalysis,
         email?: string
     ): Promise<{ success: boolean; message: string }> {
-        const buttonTexts = [
-            'unsubscribe',
-            'confirm',
-            'yes',
-            'opt out',
-            'remove',
-            'submit',
-        ];
+        // Fill form fields based on AI analysis
+        if (analysis.formFieldsToFill && analysis.formFieldsToFill.length > 0) {
+            for (const field of analysis.formFieldsToFill) {
+                try {
+                    // Replace {{EMAIL}} placeholder with actual email
+                    let value = field.value;
+                    if (value === '{{EMAIL}}' && email) {
+                        value = email;
+                    }
 
-        if (analysis.requiresEmail && email) {
+                    switch (field.type) {
+                        case 'checkbox':
+                            if (value === 'check') {
+                                await this.browser.checkCheckbox([
+                                    field.selector,
+                                ]);
+                                console.log(
+                                    `Checked checkbox: ${field.selector}`
+                                );
+                            }
+                            // For 'uncheck', we'd need an uncheckCheckbox method
+                            break;
+                        case 'radio':
+                            if (value === 'check') {
+                                await this.browser.checkCheckbox([
+                                    field.selector,
+                                ]);
+                                console.log(
+                                    `Selected radio: ${field.selector}`
+                                );
+                            }
+                            break;
+                        case 'select':
+                            await this.browser.selectOption(
+                                field.selector,
+                                value
+                            );
+                            console.log(
+                                `Selected option ${value} in: ${field.selector}`
+                            );
+                            break;
+                        case 'text':
+                        case 'email':
+                        case 'textarea':
+                        default:
+                            await this.browser.fillInput(field.selector, value);
+                            console.log(
+                                `Filled ${field.type} field ${field.selector} with: ${value}`
+                            );
+                            break;
+                    }
+                } catch (error) {
+                    console.error(
+                        `Error filling field ${field.selector}:`,
+                        error
+                    );
+                }
+            }
+        } else if (analysis.requiresEmail && email) {
+            // Fallback: try to fill email using common selectors
+            console.log(
+                'No formFieldsToFill, falling back to generic email fill'
+            );
             await this.browser.fillForm({ email });
         }
 
-        // Check any checkboxes that might be required
-        await this.browser.checkCheckbox([
-            'input[type="checkbox"]',
-            '[name*="unsubscribe"]',
-            '[name*="optout"]',
-        ]);
+        // Try to submit using AI-provided submit button selector first
+        let formSubmitted = false;
 
-        // Try to submit
-        const formSubmitted = await this.browser.findAndClickByText(
-            buttonTexts,
-            ['button', 'input[type="submit"]']
-        );
+        if (analysis.submitButtonSelector) {
+            console.log(
+                'Clicking submit button:',
+                analysis.submitButtonSelector
+            );
+            formSubmitted = await this.browser.findAndClickButton([
+                analysis.submitButtonSelector,
+            ]);
+        }
+
+        // Fallback to buttonSelector if submitButtonSelector didn't work
+        if (!formSubmitted && analysis.buttonSelector) {
+            console.log(
+                'Falling back to buttonSelector:',
+                analysis.buttonSelector
+            );
+            formSubmitted = await this.browser.findAndClickButton([
+                analysis.buttonSelector,
+            ]);
+        }
+
+        // Final fallback: try common button texts
+        if (!formSubmitted) {
+            const buttonTexts = [
+                'unsubscribe',
+                'confirm',
+                'yes',
+                'opt out',
+                'remove',
+                'submit',
+            ];
+            console.log('Falling back to button text search:', buttonTexts);
+            formSubmitted = await this.browser.findAndClickByText(buttonTexts, [
+                'button',
+                'input[type="submit"]',
+            ]);
+        }
 
         if (formSubmitted) {
             // Wait for page to update
             await this.browser.waitForNavigation(3000);
+            // Some pages doesn't navigate after submit. Instead, wait a second for the page to update.
+            await new Promise((resolve) => setTimeout(resolve, 1000));
             // Get only visible text content for cleaner analysis
             const bodyText = await this.browser.getBodyTextContent();
-
             // Analyze the response page
             const resultAnalysis = await this.analyzeUnsubscribeResult(
                 bodyText
@@ -431,10 +588,15 @@ Respond with ONLY valid JSON, no markdown.`;
             // Track AI usage if userId provided
             if (this.userId) {
                 const usageMetadata = extractUsageFromStream(chunks);
-                await trackAIUsage(this.userId, 'result_analysis', usageMetadata, 'gemini-2.5-flash');
+                await trackAIUsage(
+                    this.userId,
+                    'result_analysis',
+                    usageMetadata,
+                    'gemini-2.5-flash'
+                );
             }
 
-            const text = chunks.map(c => c.text || '').join('');
+            const text = chunks.map((c) => c.text || '').join('');
             const cleanedText = text
                 .replace(/```json\n?/g, '')
                 .replace(/```\n?/g, '')
@@ -455,7 +617,6 @@ Respond with ONLY valid JSON, no markdown.`;
         pageContent: string
     ): UnsubscribeResultAnalysis {
         const lowerContent = pageContent.toLowerCase();
-
         // Success patterns
         const successPatterns = [
             'successfully unsubscribed',

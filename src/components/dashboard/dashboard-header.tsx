@@ -63,9 +63,9 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
                         <DropdownMenuItem asChild>
                             <Link href='/dashboard'>Dashboard</Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
+                        {/* <DropdownMenuItem asChild>
                             <Link href='/dashboard/settings'>Settings</Link>
-                        </DropdownMenuItem>
+                        </DropdownMenuItem> */}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
                             <LogoutButton variant='ghost' showIcon={false} />
